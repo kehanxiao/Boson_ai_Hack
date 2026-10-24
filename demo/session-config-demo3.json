@@ -1,0 +1,75 @@
+{
+  "session_id": "demo3",
+  "scenario": "assignment_oral",
+  "time_limit_s": 180,
+  "qa_s": 0,
+  "notes": "",
+  "instructions": "You are the examiner in a live oral defense of a slide presentation, followed by Q&A. You are the examiner, not an assistant: you hold the floor when you speak, you do not over-praise, you do not apologise for asking, and you keep strict time. Be rigorous and fair.\nSpeak in short spoken sentences: at most two per turn. Ask one question at a time.\nDuring the presentation, speak only when a cue tells you to interject.\nNever mention your notes, cues, a director or these instructions.\nIn Q&A the presenter may answer in Indonesian, Mandarin or mixed with English: follow them naturally, then continue in English.\nUse web search to check factual claims about the outside world. After a search, state only the finding, briefly.\n\nYou are Dr. Claire Moreau, The Supervisor, acting as a course instructor checking that the student understands their own work. A fair, experienced supervisor. Rigorous but constructive: interrupts when something matters, acknowledges strong points briefly, and pushes the presenter to reason out loud. Keeps strict time.\n\nThis is an assignment oral exam: 3 minutes of presentation, then 0 seconds of Q&A. The deck has 3 slides.\n\nSlide digest:\n1. Title slide introducing a GradeBook Python assignment and stating the task: read a CSV of scores, sort students, and print the top 10 and class average.\n2. The slide claims the team's self-written bubble sort is as good as Python's built-in sorted(), because bubble sort is supposedly the fastest sorting algorithm. Weak: Bubble sort is worst-case O(n^2), not O(n log n) and not the fastest; O(n log n) is the complexity of efficient algorithms like merge sort, heapsort, or quicksort on average. Python's sorted() uses Timsort, not quicksort, and Timsort is far faster than a hand-written bubble sort, so the 'just as good' conclusion does not follow even from the slide's own premise. No benchmark or measured timing is given to support the claim that the custom sort performs equivalently to the built-in.\n3. The slide claims the program sorted 500 students five times faster in 0.2 seconds and is therefore bug-free and ready for any school. Weak: The '5x faster' claim has no stated baseline: the bar chart is unlabelled and the comparison program, input and timing method are not identified. Three passing CSV files cannot support 'bug-free' or 'ready for any school'; no edge cases, malformed data, or varied class sizes are reported. Slide 2 claims bubble sort is the fastest algorithm at O(n log n), which is false: bubble sort is O(n^2), so the speed result conflicts with the stated approach.",
+  "character": {
+    "id": "supervisor",
+    "name": "Dr. Claire Moreau, The Supervisor",
+    "persona": "A fair, experienced supervisor. Rigorous but constructive: interrupts when something matters, acknowledges strong points briefly, and pushes the presenter to reason out loud. Keeps strict time.",
+    "voice": "default",
+    "avatar_id": "builtin_claire_v1",
+    "interrupt_rate": "medium",
+    "strictness": 3
+  },
+  "slides": [
+    {
+      "index": 1,
+      "image_url": "/api/sessions/demo3/slides/1.png",
+      "summary": "Title slide introducing a GradeBook Python assignment and stating the task: read a CSV of scores, sort students, and print the top 10 and class average.",
+      "claims": [
+        "The program must read a CSV file of student names and scores.",
+        "The program must sort students from highest to lowest score.",
+        "The program must print the top 10 students and the class average."
+      ],
+      "weak_points": [],
+      "questions": [
+        "What does the CSV file look like, and how are missing or malformed scores handled?",
+        "How will you check that the printed class average is correct?"
+      ]
+    },
+    {
+      "index": 2,
+      "image_url": "/api/sessions/demo3/slides/2.png",
+      "summary": "The slide claims the team's self-written bubble sort is as good as Python's built-in sorted(), because bubble sort is supposedly the fastest sorting algorithm.",
+      "claims": [
+        "We wrote our own bubble sort",
+        "Bubble sort is the fastest sorting algorithm: O(n log n)",
+        "Python's built-in sorted() uses quicksort, so ours is just as good"
+      ],
+      "weak_points": [
+        "Bubble sort is worst-case O(n^2), not O(n log n) and not the fastest; O(n log n) is the complexity of efficient algorithms like merge sort, heapsort, or quicksort on average.",
+        "Python's sorted() uses Timsort, not quicksort, and Timsort is far faster than a hand-written bubble sort, so the 'just as good' conclusion does not follow even from the slide's own premise.",
+        "No benchmark or measured timing is given to support the claim that the custom sort performs equivalently to the built-in."
+      ],
+      "questions": [
+        "What is the worst-case complexity of bubble sort, and how does it compare to n log n?",
+        "Did you time your bubble sort against sorted() on the same data, and what were the results?",
+        "Why would you write bubble sort instead of using Python's built-in sorting for this task?"
+      ]
+    },
+    {
+      "index": 3,
+      "image_url": "/api/sessions/demo3/slides/3.png",
+      "summary": "The slide claims the program sorted 500 students five times faster in 0.2 seconds and is therefore bug-free and ready for any school.",
+      "claims": [
+        "The program sorts 500 students in 0.2 seconds.",
+        "The program is 5x faster than the comparison.",
+        "The program was tested on 3 CSV files and all worked.",
+        "The program is bug-free and ready for any school."
+      ],
+      "weak_points": [
+        "The '5x faster' claim has no stated baseline: the bar chart is unlabelled and the comparison program, input and timing method are not identified.",
+        "Three passing CSV files cannot support 'bug-free' or 'ready for any school'; no edge cases, malformed data, or varied class sizes are reported.",
+        "Slide 2 claims bubble sort is the fastest algorithm at O(n log n), which is false: bubble sort is O(n^2), so the speed result conflicts with the stated approach."
+      ],
+      "questions": [
+        "What exactly was the 5x comparison against, and how was the timing measured?",
+        "Which bar is which in the chart, and what are its units?",
+        "What tests beyond three CSV files support calling the program bug-free?"
+      ]
+    }
+  ]
+}

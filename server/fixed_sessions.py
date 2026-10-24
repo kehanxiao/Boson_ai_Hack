@@ -14,6 +14,8 @@ from render import is_stale, render_deck
 FIXED = {
     "demo": {"config": "session-config.json", "deck": "deck.pdf", "scorecard": "sample-scorecard.json"},
     "gradebook": {"config": "session-config-coding.json", "deck": "deck-coding.pdf", "scorecard": None},
+    # A's 3-slide demo (scripts/make_demo3_deck.py): 3 minutes, no Q&A (qa_s 0), at most 3 minutes of video.
+    "demo3": {"config": "session-config-demo3.json", "deck": "deck-demo3.pdf", "scorecard": None},
 }
 
 

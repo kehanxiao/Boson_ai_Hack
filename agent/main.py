@@ -53,7 +53,8 @@ log = logging.getLogger("viva")
 
 
 # Fixed demo sessions that work from demo/ files even without the server.
-DEMO_SESSIONS = {"demo": "session-config.json", "gradebook": "session-config-coding.json"}
+DEMO_SESSIONS = {"demo": "session-config.json", "gradebook": "session-config-coding.json",
+                 "demo3": "session-config-demo3.json"}
 
 
 def load_config(session_id: str) -> dict:

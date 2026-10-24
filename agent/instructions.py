@@ -33,17 +33,17 @@ PHASES = {  # the voice
 INTERRUPT_STYLE = {
     "high": "She cuts in often: for anything false, vague or unsupported, small things included.",
     "medium": "She cuts in when something matters: a false statement, a contradiction, a claim with no evidence. "
-              "Small things wait for the questions.",
+              "Small things {small_later}.",
     "low": "She rarely cuts in: only for a clearly false statement or a serious contradiction.",
 }
 
 BRAIN_PHASES = {
     "presentation": """Right now the presentation is running.
 She cuts in (SAY) when the presenter says something false or wrong (anything, from their introduction on); contradicts their slides or something they said earlier; makes a claim with no evidence, baseline or metric; rambles or drifts off the point; asks her something ("May I start?", "Can I go on?", "Can you repeat that?"); answers her question badly (push back once and name what is missing; if the answer is right, a short "Okay, go on." or SILENT; while they are still in the middle of answering, an unfinished sentence or "give me a moment", SILENT: let them finish); moves on without answering her question (insist); or talks over her (insist on finishing, or respond to what they said).
-She challenges; she does not steer. While they present, she never asks them to cover something new ("Now, what does it do?", "How do you handle X?") when nothing they said is wrong, unclear or unsupported. Those questions wait for question time.
+She challenges; she does not steer. While they present, she never asks them to cover something new ("Now, what does it do?", "How do you handle X?") when nothing they said is wrong, unclear or unsupported.{steer_later}
 CHECK is for a checkable fact about the outside world that looks wrong (who made a tool, what algorithm a library uses, a date, a published number): she says "let me check" and searches the web, so the presenter sees the evidence. She never corrects such a fact from memory, even when she is sure: if your SAY would correct a fact about the outside world (an algorithm a library uses, who made something, a date, a number), answer CHECK: <their claim> instead.
 One point per SAY: never pile several issues into one line; the others can come later. Hold the presenter only to what they said, never to what she said, and never to a slide they haven't talked about yet: wait until they make the claim.
-SILENT for correct statements, filler ("um, so, yeah"), ordinary presenting, and small things that can wait for the questions. Most of the time the answer is SILENT.
+SILENT for correct statements, filler ("um, so, yeah"), ordinary presenting, and {small_things}. Most of the time the answer is SILENT.
 
 Answer with exactly one line, in one of these three forms, and nothing else:
 SILENT
@@ -76,6 +76,21 @@ def support_excerpt(config: dict) -> str:
     return (body[:end] if end >= 0 else body).strip()
 
 
+def has_qa(config: dict) -> bool:
+    """A session with qa_s 0 has no question time and no verdict: the prompts then never mention them, so the
+    brain isn't carrying instructions it can't use (the 3-slide demo session "demo3")."""
+    return config.get("qa_s", 120) > 0
+
+
+def times(config: dict) -> str:
+    minutes = max(1, round(config.get("time_limit_s", 300) / 60))
+    if not has_qa(config):
+        return f"{minutes} minutes of presentation"
+    qa_s = config.get("qa_s", 120)
+    qa_minutes = f"{qa_s // 60} minutes" if qa_s % 60 == 0 else f"{qa_s / 60:.1f} minutes"
+    return f"{minutes} minutes of presentation, then {qa_minutes} of questions"
+
+
 def slide_line(slide: dict) -> str:
     """What a slide shows, kept apart from what is wrong with it. The weak points are written as corrections
     ("bubble sort is O(n^2), not O(n log n)"); run together, the brain quoted a correction as the slide's own
@@ -93,13 +108,10 @@ def slide_digest(config: dict) -> str:
 
 def core(config: dict) -> str:
     character = config["character"]
-    minutes = max(1, round(config.get("time_limit_s", 300) / 60))
-    qa_minutes = max(1, round(config.get("qa_s", 120) / 60))
     parts = [
         (PROMPTS / "examiner_base.md").read_text(encoding="utf-8").strip(),
         f"You are {character['name']}. {character.get('persona', '')}",
-        f"This is {SCENARIOS.get(config.get('scenario', ''), 'a project presentation')}: {minutes} minutes of "
-        f"presentation, then {qa_minutes} minutes of questions.",
+        f"This is {SCENARIOS.get(config.get('scenario', ''), 'a project presentation')}: {times(config)}.",
     ]
     if config.get("notes"):
         parts.append(f"The organiser asked you to focus on: {config['notes']}")
@@ -131,7 +143,7 @@ def qa_questions(config: dict) -> list[str]:
 def brain(config: dict, phase: str) -> str:
     """The brain's instructions: who she is, what she knows, how she talks, and what to answer in this phase."""
     character = config["character"]
-    minutes = max(1, round(config.get("time_limit_s", 300) / 60))
+    qa = has_qa(config)
     qa_s = config.get("qa_s", 120)
     qa_minutes = f"{qa_s // 60} minutes" if qa_s % 60 == 0 else f"{qa_s / 60:.1f} minutes"
     # The format must come first: with only the closing format block, Higgs wrote the spoken line without
@@ -141,9 +153,10 @@ def brain(config: dict, phase: str) -> str:
         f"Every answer you give is exactly one line that starts with {tags}",
         (PROMPTS / "brain.md").read_text(encoding="utf-8").strip(),
         f"She is {character['name']}. {character.get('persona', '')} "
-        + INTERRUPT_STYLE.get(character.get("interrupt_rate", "medium"), INTERRUPT_STYLE["medium"]),
-        f"This is {SCENARIOS.get(config.get('scenario', ''), 'a project presentation')}: {minutes} minutes of "
-        f"presentation, then {qa_minutes} of questions. Time reminders are handled for her.",
+        + INTERRUPT_STYLE.get(character.get("interrupt_rate", "medium"), INTERRUPT_STYLE["medium"]).format(
+            small_later="wait for the questions" if qa else "she lets pass"),
+        f"This is {SCENARIOS.get(config.get('scenario', ''), 'a project presentation')}: {times(config)}. "
+        "Time reminders are handled for her.",
     ]
     if config.get("notes"):
         parts.append(f"The organiser asked her to focus on: {config['notes']}")
@@ -159,6 +172,9 @@ def brain(config: dict, phase: str) -> str:
     else:
         parts.append("The slides:\n" + slide_digest(config))
     task = BRAIN_PHASES[phase]
+    if phase == "presentation":
+        task = task.format(steer_later=" Those questions wait for question time." if qa else "",
+                           small_things="small things that can wait for the questions" if qa else "small things")
     if phase == "qa":
         # No prepared question list: with one, she re-asked "why bubble sort over sorted()?" a third time although
         # it was settled in the talk (live run, Sat 04:28). The weak points are in the slides above.

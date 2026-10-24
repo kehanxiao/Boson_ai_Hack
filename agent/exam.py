@@ -130,7 +130,9 @@ class ExamController:
         self.ui = ui
         self.slog = slog
         self.factcheck_enabled = factcheck
-        self.reminder_before_s = reminder_before_s
+        # T-2 for a long talk; for a short one a third of it (3-minute demo: "1 minute left" at 2:00).
+        self.reminder_before_s = min(reminder_before_s, max(30, config.get("time_limit_s", 300) // 3))
+        self.qa_enabled = prompts.has_qa(config)  # qa_s 0: no question time and no verdict
 
         # The character drives interruption behaviour (PLAN.md "Character drives the examiner's behaviour").
         character = config["character"]
@@ -771,8 +773,9 @@ class ExamController:
                     # She has pressed as far as this character does: the point waits for the questions, and the
                     # presenter gets room to move on (live run, Sat 03:44: five lines in a row on one slide).
                     self.quiet_until = max(self.quiet_until, now + PRESSED_QUIET_S)
-                    await self.note("[She has pressed this point enough for now. Let it go until the questions, "
-                                    "unless they come back to it.]")
+                    await self.note("[She has pressed this point enough for now. Let it go"
+                                    + (" until the questions" if self.qa_enabled else "")
+                                    + ", unless they come back to it.]")
 
         if kind in ("reminder", "escalation") and self.reminder and not interrupted:
             self.reminder["played_at"] = now
@@ -871,7 +874,8 @@ class ExamController:
                 await self.remind("t_minus_2", f"{minutes} minute{'s' if minutes > 1 else ''} left.")
         await asyncio.sleep(max(0.0, limit - self.elapsed()))
         if self.phase == "presentation":
-            await self.remind("time_up", "Time is up. Stop there, please; we move to questions.")
+            await self.remind("time_up", "Time is up. Stop there, please; we move to questions." if self.qa_enabled
+                              else "Time is up. Thank you, that's the end of your presentation.")
 
     async def remind(self, kind: str, words: str) -> None:
         await self.wait_idle(timeout=8)
@@ -927,6 +931,9 @@ class ExamController:
     # ------------------------------------------------------------------ Q&A
     async def enter_qa(self) -> None:
         if self.phase != "presentation":
+            return
+        if not self.qa_enabled:
+            await self.finish()  # no question time: the presentation is the exam
             return
         self.phase = "qa"
         self.reminder = None
@@ -1014,6 +1021,9 @@ class ExamController:
     # ------------------------------------------------------------------ debrief
     async def enter_debrief(self, react: str | None = None) -> None:
         if self.phase not in ("presentation", "qa"):
+            return
+        if not self.qa_enabled:
+            await self.finish()  # no verdict either
             return
         self.phase = "debrief"
         if self.qa_turn and self.qa_turn is not asyncio.current_task():
