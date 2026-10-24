@@ -81,7 +81,7 @@ Everyone running parts of the system must use the **same LiveKit project**, or t
 ## Run
 Three terminals:
 ```bash
-cd server && uv run uvicorn main:app --reload --port 8000
+cd server && uv run uvicorn main:app --port 8000
 cd web && npm run dev                      # http://localhost:5173
 cd agent && uv run main.py <session_id>    # one agent per session
 ```
