@@ -49,6 +49,15 @@ Stack: uv, Python 3.11+, `livekit-agents` (PyPI, for `DataStreamAudioOutput`), `
 - **`DELETE /v1/avatar/sessions/{id}` can return 429 `rate_limit_exceeded`.** Retry it with `Retry-After` in `finally`. If the process is killed (not Ctrl-C), release the session manually, or it holds a capacity slot until the room empties or `max_duration_seconds` runs out.
 - **A minimal prompt makes the model repeat its self-description.** That's expected, and the real examiner prompt fixes it.
 
+## Stage 1 results so far (Fri 21:35, `probes/manual_turns.py`, headless, all PASS)
+- **K1:** with `turn_detection: null`, `commit` → `transcription.completed` in **~0.4–0.8 s**, and **no automatic response**.
+- **K2:** `response.create {response: {instructions: <persona + cue>}}` *while presenter audio is still streaming* → `response.created` **+63 ms**, first audio **+453 ms**. The response finished `completed` and was **not cancelled** by ongoing presenter audio. The examiner said exactly the cue ("What is the forty percent relative to, and on which metric?").
+- **K2b:** `commit` during an active response → `error voice_output_task_ongoing` ("Skipping"), as documented. **The audio isn't lost**: it stays in the buffer.
+- **K1b:** `commit` after `response.done` is accepted, and its transcript covers everything said meanwhile (16 s).
+- **K4:** a `user` text item "[Context note: …]" triggers no response, and the examiner didn't read it aloud. The instructions say bracketed text is a system note. Only `user` and `assistant` roles exist; there is no `system` item role.
+- Generation runs faster than real time (4.2 s of speech in ~1.1 s), so the commit window reopens long before the avatar finishes speaking.
+- **Interjection latency budget:** pause detection (~0.3 s) + transcript (~0.4 s) + director (Haiku, ~0.5–0.9 s?) + first audio (~0.45 s) + avatar render (~0.3–1 s) ≈ **2–3 s**. This fits the PLAN target of a cut-in at the next breath. Measure the director step for real.
+
 ## UI events
 Publish `viva.ui` messages exactly as specified in `PLAN.md` → "Interfaces between A and B", via `room.local_participant.send_text(json, topic="viva.ui")`. Listen for `viva.ctl` with a text stream handler (pattern in `docs/vendor/higgs-realtime-tutorial/livekit/probe.py`).
 

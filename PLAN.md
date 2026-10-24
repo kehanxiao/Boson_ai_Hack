@@ -1,8 +1,9 @@
 # Viva: an AI examiner for presentation defenses (Higgs Audio Hackathon build plan)
 
-> **Status (Fri 20:40):**
-> - Handoff scaffold committed: `CLAUDE.md` files, `demo/` sample files, and the docs download script `docs/fetch_vendor_docs.py`.
-> - No app code yet. Next: Stage 0 for both roles.
+> **Status (Fri 21:35):**
+> - **A: C0 passed.** Avatar + `higgs-realtime-1.5-preview` working.
+> - **K1, K2 and K4 passed (headless):** manual commits give a transcript and no auto-reply; `response.create` makes the examiner cut in while the presenter keeps talking (first audio +453 ms). Details in `agent/CLAUDE.md`.
+> - **Next for A:** K3 (cancel/truncate), K5 (switch to server VAD mid-session, code-switching, web search).
 > - This file is the single source of truth. Update the status line when a checkpoint passes.
 
 ## Context

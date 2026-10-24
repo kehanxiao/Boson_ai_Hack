@@ -37,3 +37,6 @@ desktop.ini
 .remember/
 *.log
 recordings/
+
+# Probe audio cache (synthesised presenter speech)
+agent/probes/.cache/
