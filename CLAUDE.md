@@ -1,6 +1,6 @@
 # Viva: AI examiner for presentation defenses
 
-Hackathon project for the Boson AI × MScAC Higgs Audio Hackathon. **Hacking ends Sat Oct 24, 15:00. Submit by 14:50.**
+Hackathon project for the Boson AI × MScAC Higgs Audio Hackathon. **The form closes Sat Oct 24, 14:00: submit by 13:50.** Then the 15:00 group round and the 17:00 finals.
 A presenter defends their slides; an avatar examiner (Higgs Realtime + Higgs Avatar) listens, knows the current slide, interrupts at the right moment, holds the floor, keeps time, fact-checks claims, runs Q&A (code-switching allowed) and produces a scorecard.
 
 ## Source of truth
