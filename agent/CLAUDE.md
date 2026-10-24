@@ -146,6 +146,13 @@ Stack: uv, Python 3.12, `livekit-agents` 1.8.8 (for `DataStreamAudioOutput`), `l
   - **It is per key.** With the brain on its own key (`BOSON_BRAIN_API_KEY`), the voice's first audio is ~0.35 s even when asked right after the brain's `response.done` (4 rounds), so `say()` waits only when both share a key. Pause → first audio ≈ 0.45 s brain + 0.35 s voice, plus the avatar.
 - **One session can't be both brain and voice:** a per-response `output_modalities: ["text"]` is ignored (the decision came back as audio), and switching the session to text mid-session returned no text (`probes/single_session.py`).
 
+## Voice delivery (Sat 08:45, `probes/tone_check.py`)
+- **Per-line tone can't be steered on Realtime 1.5 preview.** The same line was said plain, with a tone hint after the words ("firmly", "warmly", "puzzled"), and with Higgs TTS tags inside the words (`<|emotion:determination|>`, `<|emotion:surprise|>`).
+  - Every clip spoke exactly the line. No hint or tag was read aloud, and first audio was unchanged (313–468 ms).
+  - By ear there was no difference. Pitch moved ±10% at most, about as much as you'd expect between any two takes.
+  - The tags are a Higgs TTS feature (`docs/vendor/boson/models/higgs-tts/tags.md`). The Realtime docs only offer "prompt the model via `instructions`".
+- Her character therefore comes from her wording and timing, plus the fixed per-session voice preset (`audio.output.voice`).
+
 ## Checks against the plan (Sat 04:00–04:20)
 - **C3, headless:** `probes/c3_session.py` creates a session through the server, as the Setup page does: the GradeBook deck, fresh prep in 8.2 s, The Skeptic plus a custom brief, a supporting document.
   - `probes/exam_sim.py gradebook --session <id>` then runs the exam on that config, uploads the log and prints the server's scorecard.
