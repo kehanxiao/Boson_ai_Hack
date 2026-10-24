@@ -1,7 +1,7 @@
-"""Session config, slide images and scorecard.
+"""Session config, slide images, log upload and scorecard.
 
 session_id "demo" always works from the demo/ sample files.
-POST /api/sessions (upload + prep) arrives in Stage 3.
+Creating a session (upload + prep) lives in session_create.py.
 """
 
 import json

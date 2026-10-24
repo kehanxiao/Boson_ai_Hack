@@ -34,3 +34,10 @@ Stack: uv, Python 3.11+, `fastapi`, `uvicorn`, `python-multipart`, `livekit-api`
 - **Density is flagged in code, not left to the model.** Haiku flagged the crammed slide only about 1 run in 2. Slides with more than `DENSE_LINES` (9) extracted lines now get a "Layout check" line in the prompt, which made it 3/3.
 - Each prompt carries a whole-deck text outline, so cross-slide issues are caught (e.g. a slide-4 feature that leaks the slide-2 target).
 - `demo/prepped-analysis.json` = the cached output, in `SessionConfig.slides` shape.
+
+## `POST /api/sessions` (built Fri 23:00, `session_create.py`)
+- Pipeline: validate fields and PDF (≤ 30 MB, 1–40 pages) → `data/<id>/deck.pdf` → render → prep (Haiku) → `config.json` (SessionConfig) + `prep.json` (timing and per-slide errors, not part of the contract). About 3 s for 6 slides.
+- `session_id` = `s` + 10 hex chars (also the LiveKit room name).
+- **Character field:** `character` is a preset id. Optional free text (`custom_text`, or `character` itself when it isn't a preset id) is appended to the base preset's persona. With no preset given, the base is `supervisor`. `character.id` stays the base preset id. ⚠️ This is our reading of "`character` = preset id or `custom_text`"; confirm with A.
+- **Instructions** (`instructions.py`): `agent/prompts/examiner_base.md` if it exists, else a stand-in carrying A's K5 rules; then character + scenario + times + notes + support-doc excerpt (≤ 4000 chars) + a slide digest with weak points.
+- If a slide's Haiku call fails, that slide falls back to its own text and the session is still created. If rendering fails, the folder is removed and the request returns 500.

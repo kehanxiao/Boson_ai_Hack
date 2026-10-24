@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import livekit_token
+import session_create
 import sessions
 from config import DATA_DIR, DEMO_DIR, WEB_ORIGINS
 from render import is_stale, render_deck
@@ -32,6 +33,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(livekit_token.router)
+app.include_router(session_create.router)
 app.include_router(sessions.router)
 
 
