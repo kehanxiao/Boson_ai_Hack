@@ -16,7 +16,7 @@ Judging: Use of Higgs 30%, UX 25%, Innovation 25%, Technical Execution 20%.
 |---|---|---|
 | 0:00–1:00 | **The problem** | "Who here has a thesis defense, a capstone presentation or an assignment oral coming up? Every AI tool you have is built to be your assistant: it agrees with you. Practising a defense needs the opposite, an examiner who stops you at the weak claim and won't let you run over time." |
 | 1:00–4:15 | **Live demo** (demo3, 3 min) | Follow the script. Let her interrupt and don't narrate over her. Point at the screen only when she gives the reminder or runs the search. |
-| 4:15–5:00 | **What you just saw** | She cut in at your next breath, on claims grounded in your slides. She held the floor when you talked over her. She checked a fact on the web, kept time, escalated when you ignored her, followed an answer in Indonesian, and nudged you on when you went quiet. |
+| 4:15–5:00 | **What you just saw** | She cut in at your next breath, on claims grounded in your slides. She held the floor when you talked over her. She checked a fact on the web, kept time, escalated when you ignored her, and followed an answer in Indonesian. (If you went quiet for 4 s, she also urged you on.) |
 | 5:00–7:00 | **How it uses Higgs** (for the judges) | See "The Higgs story" below. Show the architecture diagram from the README. |
 | 7:00–7:30 | **Honest limits, and what's next** | Pick two: she cuts in at pauses, not mid-word (~2–3 s with the avatar); there's no speaker separation; she sometimes drills one topic. Next: speaker separation, a per-topic cap, and tone control once the Realtime voice supports it. |
 | 7:30–10:00 | **Questions** | See the likely questions below. |
@@ -33,7 +33,7 @@ For the finals (10 min + Q&A) there is room to stretch "How it uses Higgs" and s
 
 ## Likely questions
 - **Why two Realtime sessions and not one?** An audio response can't be silent, and the voice refuses new turns while it speaks or searches. Dozens of "stay silent" turns would also fill her spoken conversation. One session also can't switch to text output per response (tested).
-- **How do you stop her from interrupting all the time?** The character sets it: after she speaks she waits 3–8 s before raising something new, presses a point once (twice for The Skeptic), and then lets it go. Most decisions are SILENT.
+- **How do you stop her from interrupting all the time?** The character sets it: after she speaks she waits 3–4 s before raising something new, presses a point once (twice for The Skeptic), and then lets it go. Most decisions are SILENT.
 - **Does it work on any deck?** Yes: upload a PDF on the Setup page. Claude Haiku analyses each slide (claims, weak points, likely questions) in 3–8 s. She learns a slide's weak points only after you have talked about it for ~5 s, so she doesn't jump ahead.
 - **How fast is it?** Pause → her decision ~1 s; you hear her ~2–3 s after you stop with the avatar (~1.4 s of that is the avatar), ~1.4 s voice-only.
 - **What about the scorecard?** After the exam, Claude Haiku scores clarity, rigour, handling questions and time management from the session log. Every quote and timestamp is checked against the log in code.

@@ -1,6 +1,6 @@
 # Demo deck: "ERwait" (make this as `demo/deck.pdf`)
 
-This is a fictional MScAC-style internship project. Build the 8 slides in PowerPoint or Google Slides, keep the 16:9 default, and export as PDF to `demo/deck.pdf`.
+This is a fictional MScAC-style internship project. `demo/deck.pdf` is generated from this outline by `server/scripts/make_placeholder_deck.py`.
 The **planted weaknesses** are deliberate: they give the examiner something to catch in the demo video. Don't fix them.
 
 | # | Title | Content | Planted weakness (examiner target) |

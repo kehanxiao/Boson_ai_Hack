@@ -1,6 +1,6 @@
 # Demo deck 2: "GradeBook" (`demo/deck-coding.pdf`)
 
-An easy, 6-slide intro-programming assignment, so anyone watching the demo can follow every catch without domain knowledge. **This is the demo-video deck.** Scenario: **Assignment oral**, examiner: **The Supervisor**, 4:00 + 1:30 Q&A.
+An easy, 6-slide intro-programming assignment, so anyone watching the demo can follow every catch without domain knowledge. It was the first demo-video deck; the video now uses the 3-slide `demo3` session ([`docs/demo-script-3min.md`](../docs/demo-script-3min.md)). Scenario: **Assignment oral**, examiner: **The Supervisor**, 4:00 + 1:30 Q&A.
 
 - Built-in session **`gradebook`**: `cd agent && uv run main.py gradebook`, then open http://localhost:5173/session/gradebook. No upload needed.
 - Files: the deck comes from `server/scripts/make_coding_deck.py`; the cached Haiku analysis is `demo/prepped-analysis-coding.json`; `demo/session-config-coding.json` comes from `server/scripts/make_gradebook_session.py`.
@@ -16,6 +16,8 @@ The **planted weaknesses** are deliberate. Don't fix them.
 | 6 | Testing & Conclusion | "Tested on 3 CSV files: all worked." "The program is bug-free." "Ready for any school to use." | **Overclaim.** Three happy-path files; no edge cases |
 
 ## Presenter run-sheet for the demo
+> **Out of date:** written for the first version of the agent (the Claude Haiku director). The rules in the next line no longer apply: she now waits 4 s after speaking (no 20 s start-up or one-per-slide rule), and for a 4:00 talk the reminder is "1 minute left." at 3:00. See the README for the current behaviour.
+
 Timed against the agent's rules: no interruptions in the first 20 s, at most one per slide, 30 s between interjections (Supervisor), fact-checks need 10 s since the last interjection, and the Supervisor only interrupts for **major** issues. The T−2:00 reminder fires **2:00 into the talk**.
 
 | Clock | Slide | What to do | What should happen |
