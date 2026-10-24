@@ -85,7 +85,9 @@ class Director:
         response = await self.client.messages.create(
             model=MODEL,
             max_tokens=1024,  # adaptive thinking counts toward it: 400 truncated the JSON once live
-            system=self.system,
+            # The system prompt (rules, character, slide digest) is identical for every call in a session:
+            # cache it (Haiku 5.5 caches from 512 tokens) to cut time to first token.
+            system=[{"type": "text", "text": self.system, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user}],
             output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
         )

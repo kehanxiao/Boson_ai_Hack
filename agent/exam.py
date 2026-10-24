@@ -45,6 +45,10 @@ QA_PATIENCE_S = {"high": 1.6, "medium": 2.0, "low": 2.5}  # silence before she r
 AWAIT_REPLY_S = 25  # after an interjection, how long the examiner waits for the presenter's answer
 DEFERRED_FACTCHECK_S = 30  # a fact-check held back by its spacing rule is dropped if it can't fire within this
 # "Can I continue?" (live run: asked twice, ignored both times by the director as "procedural").
+# "Can you repeat the question?" (live run: asked four times in Q&A, and each time she moved on instead).
+REPEAT_ASK = re.compile(r"\b((can|could|would) you (please )?repeat|repeat (the|your|that|it)|please repeat|say (that|it) "
+                        r"again|pardon|come again|what was the question|what('s| is) the question|didn'?t (hear|catch)|"
+                        r"ulang|ulangi|apa pertanyaannya)\b|再说一遍|重复一下|什么问题", re.I)
 CONTINUE_ASK = re.compile(r"\b(can|may|shall|should|could) i (continue|go on|move on|carry on|proceed)\b|"
                           r"\b(is that (ok|okay|fine|enough)|boleh lanjut|bisa lanjut)\b|可以继续", re.I)
 FILLERS = {"um", "uh", "uhm", "erm", "er", "ah", "oh", "hmm", "mm", "yeah", "yes", "no", "okay", "ok", "so", "well",
@@ -125,6 +129,9 @@ class ExamController:
         self.last_examiner_request = 0.0
         self.answer_words = 0
         self.answer_open_since = 0.0  # Q&A: speech counts as the answer only from when her question has played
+        self.current_question = ""  # the Q&A question on the table, for repeats
+        self.answer_text: list[str] = []  # Q&A: what the presenter said since the question played
+        self.pending_repeat = False  # they asked her to repeat while still talking: repeat at the next pause
         self.chunk_started_at = 0.0  # when the speech in the current chunk began
         # After an interjection has played the presenter owes an answer: {"since", "asked", "answer": [chunks]}.
         # The director judges the answer (acknowledge / keep waiting / fact-check) with that context.
@@ -270,7 +277,9 @@ class ExamController:
         self.pause_at = time.monotonic()
         self.silent_since = self.pause_at - VAD_SILENCE_S
         await self._commit()  # queued by the client if a response is being generated
-        if self.phase == "qa":
+        if self.phase == "qa" and self.pending_repeat and not self.engaged:
+            await self._repeat_question()
+        elif self.phase == "qa":
             if self.qa_turn:
                 self.qa_turn.cancel()
             self.qa_turn = self._spawn(self._qa_end_of_turn())
@@ -304,6 +313,10 @@ class ExamController:
             self.awaiting = self.pending_ack = None
             await self.say("ack", "The presenter asked whether they may continue. Tell them in a few words that "
                            "they may.", max_tokens=30)
+        elif self.phase == "presentation" and self.awaiting and REPEAT_ASK.search(text) and not self.engaged:
+            # They didn't catch her question: repeat it (same exchange), don't judge this as their answer.
+            await self.say("repeat", "The presenter asked you to repeat. Repeat your question slowly and simply, in "
+                           f"at most 20 words: {self.awaiting['asked']}", hold=True, max_tokens=60)
         elif self.phase == "presentation":
             if self.awaiting:
                 self.awaiting["answer"].append(text)
@@ -312,11 +325,20 @@ class ExamController:
             elif await self._try_trap(text, meta):
                 return  # a predicted weak claim: interjected at once, no director round-trip
             self._spawn(self.maybe_direct(text, meta))
+        elif self.phase == "qa" and REPEAT_ASK.search(text) and self.current_question:
+            # "Can you repeat the question?" is not an answer: repeat the same question.
+            if self.qa_turn:
+                self.qa_turn.cancel()
+            if self.presenter_speaking or self.engaged:
+                self.pending_repeat = True
+            else:
+                await self._repeat_question()
         elif self.phase == "qa":
             # Only speech that began after her question finished playing is an answer (a reaction while
             # she was still asking moved her on before the presenter had started answering).
             if meta.get("started", 0.0) >= self.answer_open_since - 0.3:
                 self.answer_words += content_words(text)
+                self.answer_text.append(text)
             # The transcript can land after the end-of-turn check ran: if this made it a real answer
             # and the presenter has stopped, check again so the examiner doesn't wait forever.
             if (self.answer_words >= MIN_QA_ANSWER_WORDS and not self.presenter_speaking
@@ -353,7 +375,7 @@ class ExamController:
                 return
             if u is None:
                 return
-            if u["kind"] in ("interjection", "factcheck_answer", "insist") and self.phase == "presentation":
+            if u["kind"] in ("interjection", "factcheck_answer", "insist", "repeat") and self.phase == "presentation":
                 self._open_exchange(u["kind"])  # from now on the presenter owes an answer (not from playback end)
             if u.get("audio"):
                 # When it should have finished playing, with slack for the avatar (watchdog).
@@ -433,9 +455,9 @@ class ExamController:
             return
         if kind == "ack":
             self.awaiting = None
-        elif kind == "qa" and self.phase == "qa":
+        elif kind in ("qa", "qa_repeat") and self.phase == "qa":
             # Her question has played (or the presenter cut in): the answer starts now.
-            self.answer_words, self.answer_open_since = 0, time.monotonic()
+            self.answer_words, self.answer_open_since, self.answer_text = 0, time.monotonic(), []
         await self.idle_state()
 
     # ------------------------------------------------------------------ presentation
@@ -494,15 +516,16 @@ class ExamController:
     def _open_exchange(self, kind: str) -> None:
         """She has interrupted (or re-asked): the presenter owes an answer, judged by the director."""
         now = time.monotonic()
-        if kind == "insist" and self.awaiting:
+        if kind in ("insist", "repeat") and self.awaiting:
             self.awaiting.update(since=now, answer=[])  # same question, asked again
             return
         text = self.last_examiner_text
         question = question_part(text)
-        # Only a real interruption asks something she can insist on. A fact-check correction may end in "?",
-        # but carrying "The search confirms ..." into Q&A as an unanswered question made no sense (sim).
+        # She can insist on anything she actually asked, including a question at the end of a fact-check
+        # correction (live: the presenter moved on after one and she let it go). Only the question sentences
+        # are kept, so "The search confirms ..." is never carried into Q&A as if it were a question.
         self.awaiting = {"since": now, "asked": question or text, "answer": [], "index": len(self.interjections) - 1,
-                         "insists": 0, "is_question": kind == "interjection" and bool(question)}
+                         "insists": 0, "is_question": bool(question)}
 
     def _allowed(self, slide: int) -> tuple[bool, bool]:
         """(interjection allowed, fact-check allowed) right now, by cooldowns and caps."""
@@ -733,7 +756,9 @@ class ExamController:
         await self.realtime.update_instructions(prompts.for_phase(self.config, "qa", self.interjections), tools=[])
         await self.wait_idle(timeout=8)
         q = self.next_question() or "Ask your sharpest question about the weakest slide."
-        await self.say("qa", f"Thank the presenter in at most three words, then ask your first question: {q}", max_tokens=90)
+        self.current_question = q
+        await self.say("qa", f"Thank the presenter in at most three words, then ask your first question in at most "
+                       f"20 words: {q}", max_tokens=70)
         self._spawn(self._qa_timer())
 
     async def _qa_timer(self) -> None:
@@ -746,16 +771,34 @@ class ExamController:
             await self.wait_idle(timeout=3)
         # Reply only to a real answer that began after her question had played: "um", "oh" or a reaction
         # while she was still asking is not an answer (live runs: both moved her on too early).
+        if self.phase == "qa" and self.pending_repeat and not self.engaged:
+            await self._repeat_question()
+            return
+        said = " ".join(self.answer_text).strip()
+        if (self.phase == "qa" and not self.presenter_speaking and not self.engaged and said.endswith("?")
+                and content_words(said) < 12 and self.last_speech_start > self.answer_open_since):
+            # A short question back ("You mean the runtime?") asks for clarification, not the next question.
+            await self.say("qa_repeat", f"The presenter asked a clarifying question: \"{said}\". Answer it in one short "
+                           f"sentence, then restate your question in at most 20 words: {self.current_question}",
+                           max_tokens=80, metric="answer_end_to_reply")
+            return
         if (self.phase == "qa" and not self.presenter_speaking and not self.engaged
                 and self.last_speech_start > self.answer_open_since and self.answer_words >= MIN_QA_ANSWER_WORDS):
             q = self.next_question()
             if q:
-                await self.say("qa", f"React to the presenter's answer in at most one sentence, then ask: {q}",
-                               max_tokens=110, metric="answer_end_to_reply")
+                self.current_question = q
+                await self.say("qa", "React to the presenter's answer in at most one sentence, then ask, in at most 20 "
+                               f"words: {q}", max_tokens=80, metric="answer_end_to_reply")
             else:
                 # Out of questions: straight to the verdict, reacting to this last answer first. (A separate
                 # "that was my last question" line got cut off live and repeated, then she re-asked a question.)
                 await self.enter_debrief(react_first=True)
+
+    async def _repeat_question(self) -> None:
+        """They asked her to repeat: the same question again, slower and simpler. The answer window restarts."""
+        self.pending_repeat = False
+        await self.say("qa_repeat", "The presenter asked you to repeat the question. Repeat it slowly and simply, in at "
+                       f"most 20 words: {self.current_question}", max_tokens=60, metric="answer_end_to_reply")
 
     async def _maybe_barge_in(self) -> None:
         await asyncio.sleep(max(0.0, self.hold_until - time.monotonic()) + BARGE_IN_S)

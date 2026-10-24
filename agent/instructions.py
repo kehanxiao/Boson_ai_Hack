@@ -22,7 +22,8 @@ PHASES = {
     ),
     "qa": (
         "Phase: questions and answers. The presentation is over. Lead the questioning: react to what the presenter "
-        "actually said in at most one sentence, then ask one question. Press on vague answers. Never ask a question "
+        "actually said in at most one sentence, then ask one short question (at most 20 words). Press on vague "
+        "answers. If the presenter asks you to repeat, repeat the same question more simply. Never ask a question "
         "you have already asked, and do not search the web or re-check facts now: the fact-checks are done."
     ),
     "debrief": "Phase: debrief. The examination is over. Give your verdict when asked, in at most three sentences.",
