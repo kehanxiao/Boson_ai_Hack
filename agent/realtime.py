@@ -138,8 +138,13 @@ class RealtimeClient:
         await self.send({"type": "conversation.item.create", "item": {
             "type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}})
 
-    async def update_instructions(self, instructions: str) -> None:
-        await self.send({"type": "session.update", "session": {"instructions": instructions}})
+    async def update_instructions(self, instructions: str, tools: list | None = None) -> None:
+        """Mid-session update of instructions (and optionally tools; tools: [] removes web search)."""
+        session: dict = {"instructions": instructions}
+        if tools is not None:
+            session["tools"] = tools
+            self._session = {**self._session, "tools": tools}  # a reconnect keeps the change
+        await self.send({"type": "session.update", "session": session})
 
     async def _read(self) -> None:
         try:

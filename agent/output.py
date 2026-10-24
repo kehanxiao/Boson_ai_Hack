@@ -9,12 +9,14 @@ All three expose the same interface:
 """
 
 import asyncio
+import logging
 import time
 from typing import Callable
 
 from livekit import rtc
 from livekit.agents.voice.avatar import DataStreamAudioOutput
 
+log = logging.getLogger("viva.output")
 RATE = 24_000
 Finished = Callable[[float, bool], None]
 
@@ -31,8 +33,10 @@ class AvatarOutput:
         self._callbacks = [cb]  # one exam controller at a time: a new exam replaces the old callback
 
     def _finished(self, event) -> None:
+        position, interrupted = getattr(event, "playback_position", 0.0), getattr(event, "interrupted", False)
+        log.info("avatar playback_finished position=%.2fs interrupted=%s", position, interrupted)
         for cb in self._callbacks:
-            cb(getattr(event, "playback_position", 0.0), getattr(event, "interrupted", False))
+            cb(position, interrupted)
 
     async def capture(self, pcm: bytes) -> None:
         await self._out.capture_frame(rtc.AudioFrame(pcm, RATE, 1, len(pcm) // 2))

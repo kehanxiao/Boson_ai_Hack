@@ -35,10 +35,25 @@ ACK_SILENCE_S = 1.0  # going quiet this long after a reminder counts as acknowle
 IGNORE_AFTER_S = 3.5  # still talking this long after a reminder means it was ignored
 
 STT_PLACEHOLDER = "the transcription is not available"  # seen live from higgs-stt-3.1 when it fails
+BARGE_IN_S = 0.8  # presenter speech this long past the hold window cancels the examiner (Q&A); "um" is shorter
+MIN_ANSWER_WORDS = 3  # a Q&A turn needs this many non-filler words before the examiner replies
+AWAIT_REPLY_S = 25  # after an interjection, how long the examiner waits for the presenter's answer
+# "Can I continue?" (live run: asked twice, ignored both times by the director as "procedural").
+CONTINUE_ASK = re.compile(r"\b(can|may|shall|should|could) i (continue|go on|move on|carry on|proceed)\b|"
+                          r"\b(is that (ok|okay|fine|enough)|boleh lanjut|bisa lanjut)\b|可以继续", re.I)
+FILLERS = {"um", "uh", "uhm", "erm", "er", "ah", "oh", "hmm", "mm", "yeah", "yes", "no", "okay", "ok", "so", "well",
+           "right", "sorry", "like", "the", "a", "and", "i", "oke", "ya", "eh", "嗯", "啊", "哦"}
 ACK_WORDS = re.compile(r"\b(okay|ok|noted|yes|yep|got it|sure|understood|right|thanks|thank you|baik|oke|siap)\b", re.I)
 ACK_CJK = ("好的", "明白", "知道")
 URL = re.compile(r"https?://[^\s)\]>\"']+")
 INDONESIAN = re.compile(r"\b(saya|kami|kita|tidak|belum|sudah|bisa|itu|ini|yang|dengan|untuk|karena|tapi|jujur|apakah|waktu)\b", re.I)
+
+
+def content_words(text: str) -> int:
+    """Words that carry an answer: fillers ("um", "yeah", "okay") don't count. CJK characters count as words."""
+    cjk = sum(1 for ch in text if "一" <= ch <= "鿿")
+    words = [w for w in re.findall(r"[a-zA-Z']+", text.lower()) if w not in FILLERS]
+    return len(words) + cjk // 2
 
 
 def interrupts_on_minor(character: dict) -> bool:
@@ -85,6 +100,9 @@ class ExamController:
         self.silent_since: float | None = None
         self.last_speech_start = 0.0
         self.last_examiner_request = 0.0
+        self.answer_words = 0
+        self.awaiting_reply: float | None = None  # set when an interjection has played: the presenter owes an answer
+        self.ack_turn: asyncio.Task | None = None
         self.last_commit = 0.0
         self.chunk_slide = 1  # slide showing when the current chunk of speech began
         self.commits: deque[dict] = deque()  # per commit, in order: the chunk's slide and pause time
@@ -161,6 +179,7 @@ class ExamController:
         phase = self.phase if self.phase in prompts.PHASES else "presentation"
         self._requested = {"kind": kind, "hold": hold, "at": time.monotonic()}
         self.last_examiner_request = time.monotonic()
+        self.answer_words = 0  # counts the presenter's real words since this request
         if not await self.realtime.create_response(prompts.with_cue(self.config, phase, cue, self.interjections), max_tokens):
             self._requested = None
             return False
@@ -207,9 +226,10 @@ class ExamController:
         self.last_speech_start = time.monotonic()
         if time.monotonic() - self.last_commit > 0.3:
             self.chunk_slide = self.slide
-        if self.qa_turn:
-            self.qa_turn.cancel()  # they are still answering
-            self.qa_turn = None
+        for turn in (self.qa_turn, self.ack_turn):
+            if turn:
+                turn.cancel()  # they are still talking
+        self.qa_turn = self.ack_turn = None
         if self.examiner_audible:
             if time.monotonic() < self.hold_until:
                 await self.ui_state("holding_floor")
@@ -225,6 +245,10 @@ class ExamController:
             if self.qa_turn:
                 self.qa_turn.cancel()
             self.qa_turn = self._spawn(self._qa_end_of_turn())
+        elif self.phase == "presentation" and self.awaiting_reply:
+            if self.ack_turn:
+                self.ack_turn.cancel()
+            self.ack_turn = self._spawn(self._ack_end_of_turn())
 
     async def on_slide(self, index: int) -> None:
         if index == self.slide:
@@ -248,8 +272,24 @@ class ExamController:
         r = self.reminder
         if r and not r["acked"] and r["played_at"] and (ACK_WORDS.search(text) or any(w in text for w in ACK_CJK)):
             await self.acknowledge("phrase")
-        if self.phase == "presentation":
+        if self.phase == "presentation" and self.awaiting_reply:
+            # Their answer to the interjection: the examiner responds to it, not the director.
+            self.answer_words += content_words(text)
+            if (self.answer_words >= MIN_ANSWER_WORDS and not self.presenter_speaking
+                    and (self.ack_turn is None or self.ack_turn.done())):
+                self.ack_turn = self._spawn(self._ack_end_of_turn())
+        elif self.phase == "presentation" and CONTINUE_ASK.search(text) and not self.engaged:
+            await self.say("ack", "The presenter asked whether they may continue. Tell them in a few words that "
+                           "they may.", max_tokens=30)
+        elif self.phase == "presentation":
             self._spawn(self.maybe_direct(text, meta))
+        elif self.phase == "qa":
+            self.answer_words += content_words(text)
+            # The transcript can land after the end-of-turn check ran: if this made it a real answer
+            # and the presenter has stopped, check again so the examiner doesn't wait forever.
+            if (self.answer_words >= MIN_ANSWER_WORDS and not self.presenter_speaking
+                    and (self.qa_turn is None or self.qa_turn.done())):
+                self.qa_turn = self._spawn(self._qa_end_of_turn())
 
     async def on_realtime_event(self, kind: str, event: dict) -> None:
         if kind == "response.created":
@@ -274,7 +314,12 @@ class ExamController:
             await self.output.capture(pcm)
         elif kind == "response.done":
             u, self._current = self._current, None
-            if u is None or u.get("finished"):
+            if u is not None and u.get("finished"):
+                # Cancelled by a barge-in. Close its audio segment anyway: otherwise LiveKit's avatar
+                # output folds the next reply into it and drops that reply's playback_finished.
+                self.output.flush()
+                return
+            if u is None:
                 return
             if u.get("audio"):
                 # When it should have finished playing, with slack for the avatar (watchdog).
@@ -344,6 +389,13 @@ class ExamController:
         elif kind == "verdict":
             await self.finish()
             return
+        elif kind == "qa_last" and not interrupted:
+            await self.enter_debrief()
+            return
+        if kind in ("interjection", "factcheck_answer") and self.phase == "presentation" and not interrupted:
+            self.awaiting_reply = time.monotonic()  # the presenter owes an answer; acknowledge it when it comes
+        elif kind == "ack":
+            self.awaiting_reply = None
         await self.idle_state()
 
     # ------------------------------------------------------------------ presentation
@@ -381,6 +433,8 @@ class ExamController:
                     await self.say("factcheck_answer", "Your web search did not return. In one or two short sentences, "
                                    f"say from what you know whether this claim is right, starting with the correction: {claim}",
                                    max_tokens=80)
+            if self.awaiting_reply and now - self.awaiting_reply > AWAIT_REPLY_S:
+                self.awaiting_reply = None  # they carried on without answering; let the director back in
             while self.playing and now > self.playing[0]["expected_end"]:
                 u = self.playing.popleft()
                 log.warning("watchdog: no playback_finished for %s; assuming it finished", u["kind"])
@@ -395,7 +449,7 @@ class ExamController:
         return interject, factcheck
 
     async def maybe_direct(self, latest: str, meta: dict) -> None:
-        if self.phase != "presentation" or self.elapsed() < NO_INTERJECTION_BEFORE_S:
+        if self.phase != "presentation" or self.elapsed() < NO_INTERJECTION_BEFORE_S or self.awaiting_reply:
             return
         if self.director_busy:
             self._director_next = (latest, meta)  # don't drop it: decide on it right after the current call
@@ -432,7 +486,9 @@ class ExamController:
     async def interject(self, d, meta: dict) -> None:
         slide = meta["slide"]
         self.last_interjection = time.monotonic()
-        self.interjections.append(d.claim or d.cue)
+        # Phrased as what the examiner did, so in Q&A a wrong claim isn't read as a fact to re-check.
+        self.interjections.append(f"you fact-checked and corrected: {d.claim}" if d.action == "factcheck"
+                                  else f"you challenged: {d.cue or d.reason}")
         entry = self.slog.write("interjection", slide=slide, reason=d.reason)
         await self.ui.publish({"type": "interjection", "slide": slide, "reason": d.reason, "t": entry["t"]})
         if d.action == "factcheck":
@@ -526,7 +582,8 @@ class ExamController:
         self.questions = self._pick_questions()
         self.slog.write("phase", phase="qa")
         await self.ui_state("qa")
-        await self.realtime.update_instructions(prompts.for_phase(self.config, "qa", self.interjections))
+        # Web search off: in the first live run she re-ran the presentation's fact-check three times in Q&A.
+        await self.realtime.update_instructions(prompts.for_phase(self.config, "qa", self.interjections), tools=[])
         await self.wait_idle(timeout=8)
         q = self.next_question() or "Ask your sharpest question about the weakest slide."
         await self.say("qa", f"Thank the presenter in at most three words, then ask your first question: {q}", max_tokens=90)
@@ -536,20 +593,36 @@ class ExamController:
         await asyncio.sleep(self.config.get("qa_s", 120))
         await self.enter_debrief()
 
+    async def _ack_end_of_turn(self) -> None:
+        """The presenter has answered an interjection: accept it (or name what's missing) and let them go on."""
+        await asyncio.sleep(max(0.0, self.patience - VAD_SILENCE_S))
+        if self.engaged:
+            await self.wait_idle(timeout=3)
+        if (self.phase == "presentation" and self.awaiting_reply and not self.presenter_speaking
+                and not self.engaged and self.answer_words >= MIN_ANSWER_WORDS):
+            self.awaiting_reply = None
+            await self.say("ack", "The presenter has answered your interjection. In one short sentence, acknowledge "
+                           "the answer: accept it, or say in a few words what is still missing. Then tell them to "
+                           "continue.", max_tokens=50, metric="answer_end_to_reply")
+
     async def _qa_end_of_turn(self) -> None:
         await asyncio.sleep(max(0.0, self.patience - VAD_SILENCE_S))
         if self.engaged:  # e.g. the cancelled reply after a barge-in is still winding down
             await self.wait_idle(timeout=3)
-        # Reply only to speech that began after the examiner last asked something.
+        # Reply only to a real answer that began after the examiner last asked something: "um", "oh" or
+        # "yeah" alone is not a turn (live run: each filler got a reply and the exchange turned rapid-fire).
         if (self.phase == "qa" and not self.presenter_speaking and not self.engaged
-                and self.last_speech_start > self.last_examiner_request):
+                and self.last_speech_start > self.last_examiner_request and self.answer_words >= MIN_ANSWER_WORDS):
             q = self.next_question()
-            cue = "React to the presenter's answer in at most one sentence, then " + (
-                f"ask: {q}" if q else "ask one sharp follow-up question about what they just said.")
-            await self.say("qa", cue, max_tokens=110, metric="answer_end_to_reply")
+            if q:
+                await self.say("qa", f"React to the presenter's answer in at most one sentence, then ask: {q}",
+                               max_tokens=110, metric="answer_end_to_reply")
+            else:  # out of questions: close instead of circling back to points already covered
+                await self.say("qa_last", "React to the presenter's answer in at most one sentence, then say that was "
+                               "your last question.", max_tokens=60, metric="answer_end_to_reply")
 
     async def _maybe_barge_in(self) -> None:
-        await asyncio.sleep(max(0.0, self.hold_until - time.monotonic()) + 0.4)
+        await asyncio.sleep(max(0.0, self.hold_until - time.monotonic()) + BARGE_IN_S)
         if self.phase == "qa" and self.presenter_speaking and self.examiner_audible:
             self.cancel_at = time.monotonic()
             await self.realtime.cancel()

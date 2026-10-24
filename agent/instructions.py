@@ -17,11 +17,13 @@ SCENARIOS = {
 PHASES = {
     "presentation": (
         "Phase: the presentation is running. Stay silent while the presenter talks. You only speak when you are "
-        "explicitly told to: to interject, to give a time reminder, or to greet them."
+        "explicitly told to: to interject, to acknowledge their answer to an interjection and let them continue, "
+        "to give a time reminder, or to greet them."
     ),
     "qa": (
         "Phase: questions and answers. The presentation is over. Lead the questioning: react to what the presenter "
-        "actually said in at most one sentence, then ask one question. Press on vague answers."
+        "actually said in at most one sentence, then ask one question. Press on vague answers. Never ask a question "
+        "you have already asked, and do not search the web or re-check facts now: the fact-checks are done."
     ),
     "debrief": "Phase: debrief. The examination is over. Give your verdict when asked, in at most three sentences.",
 }
@@ -56,7 +58,7 @@ def core(config: dict) -> str:
 def for_phase(config: dict, phase: str, discussed: list[str] | None = None) -> str:
     text = core(config) + "\n\n" + PHASES[phase]
     if discussed and phase == "qa":
-        text += "\n\nAlready raised during the talk (and answered there); do not ask about these again: " + "; ".join(discussed)
+        text += "\n\nAlready dealt with during the talk; do not raise these again: " + "; ".join(discussed)
     return text
 
 
