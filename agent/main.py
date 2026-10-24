@@ -10,6 +10,7 @@ when the server is not running.
 
 import argparse
 import asyncio
+import dataclasses
 import json
 import logging
 import os
@@ -25,6 +26,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 load_dotenv(HERE.parent / ".env")
 
 import instructions as prompts  # noqa: E402  (needs .env loaded first for the model names)
+import traps as traps_mod  # noqa: E402
 from director import Director  # noqa: E402
 from exam import ExamController  # noqa: E402
 from output import AvatarOutput, VoiceOutput  # noqa: E402
@@ -168,9 +170,17 @@ async def run(session_id: str) -> None:
 
         realtime = RealtimeClient(REALTIME_URL, BOSON_KEY, on_event)
 
+        # The examiner reads the slides before the talk: prepared interjections, built once per session.
+        try:
+            prepared = await traps_mod.build(config, cache_path=HERE / "runs" / f"{room_name}-traps.json")
+        except Exception as exc:
+            log.warning("no prepared interjections (%s); the director handles everything", exc)
+            prepared = []
+
         def new_exam() -> ExamController:
             slog = SessionLog(HERE / "runs" / f"{room_name}-{time.strftime('%Y%m%d-%H%M%S')}.jsonl")
-            return ExamController(config, realtime, output, LiveKitUI(room), slog, Director(config), factcheck=FACTCHECK)
+            return ExamController(config, realtime, output, LiveKitUI(room), slog, Director(config), factcheck=FACTCHECK,
+                                  traps=[dataclasses.replace(t) for t in prepared])  # fresh "used" flags per exam
 
         current = new_exam()
         await realtime.connect(realtime_session(config))

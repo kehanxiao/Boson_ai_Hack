@@ -21,7 +21,7 @@ MODEL = os.environ.get("VIVA_HAIKU_MODEL", "claude-haiku-5-5")
 SCHEMA = {
     "type": "object",
     "properties": {
-        "action": {"type": "string", "enum": ["none", "interject", "factcheck", "acknowledge"]},
+        "action": {"type": "string", "enum": ["none", "interject", "factcheck", "acknowledge", "insist"]},
         "kind": {
             "type": "string",
             "enum": ["none", "question_closed", "question_open", "comment_negative", "comment_positive", "factcheck"],

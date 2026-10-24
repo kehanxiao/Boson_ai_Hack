@@ -13,7 +13,7 @@
 > - This file is the single source of truth. Update the status line when a checkpoint passes.
 
 ## Context
-- **Event:** Boson AI × MScAC Higgs Audio Hackathon. Kickoff Fri Oct 23, 6 PM. **Hacking ends Sat 3 PM**, then presentations. Team of 2. About 18 hours left from 20:30 Fri.
+- **Event:** Boson AI × MScAC Higgs Audio Hackathon. Kickoff Fri Oct 23, 6 PM. **Submission deadline Sat 2 PM** (opening-ceremony slides p20-21), then a 3 PM group round (10 min incl. questions, peers vote) and 5 PM finals (10 min + Q&A, judges choose). Team of 2. About 18 hours left from 20:30 Fri.
 - **Judging:**
   - **Use of Higgs (30%):** code-switching, expressive delivery, real-time turn-taking, interruption handling, tool calling. "If it'd work the same with any generic TTS engine, strengthen this."
   - **UX (25%):** "a rough prototype that feels good beats a polished one that doesn't."
@@ -242,13 +242,13 @@ Both sides get fixtures in `demo/`: `session-config.json`, `sample-log.jsonl`, `
 - **A:** load the config per session. Add custom characters (free text appended to the persona, with the closest preset as the base). Pass the log to `/scorecard`.
 - **✅ C3:** an unseen deck and a custom character run end to end, with a scorecard. Tag `v1`.
 
-### Stage 4: feel + tuning (Sat 11:00–12:30)
+### Stage 4: feel + tuning (Sat 09:30–11:30)
 - Director thresholds per character, short sharp interjection phrasing, `LatencyHud` (pause → interjection, cancel → silence).
 - A rehearsed code-switching moment in Q&A and a web fact-check moment.
 - Check the voice-only fallback (`VIVA_AVATAR=0`). Use a wired headset mic.
-- **✅ C4:** feature freeze at 12:30. Tag `rc`.
+- **✅ C4:** feature freeze at 11:30. Tag `rc`.
 
-### Stage 5: demo video (Sat 12:30–14:00), 2:30 total
+### Stage 5: demo video (Sat 11:30–13:00), 2:30 total
 1. **Cold open:** the presenter claims "40% better" and the examiner cuts in at the next breath: "Better than *what*? What's your baseline?"
 2. The problem: every AI is your assistant, and practising a defense needs an examiner.
 3. Setup: scenario, character, upload.
@@ -261,7 +261,7 @@ Both sides get fixtures in `demo/`: `session-config.json`, `sample-log.jsonl`, `
 Record with OBS, 2–3 takes, upload publicly.
 - **✅ C5:** the link plays in incognito.
 
-### Stage 6: repo + submission (Sat 14:00–14:50)
+### Stage 6: repo + submission (Sat 13:00–13:50; the form closes at 2 PM)
 - **README:**
   - problem and audience
   - setup (LiveKit Cloud, keys, `uv sync`, `npm i`, run commands)
@@ -270,9 +270,9 @@ Record with OBS, 2–3 takes, upload publicly.
   - **known limitations** (e.g. interjections land at pauses, not mid-word; avatar latency; preview model)
 - `.env.example`. Secret scan: `git grep -nE "bai-|sk-ant|LIVEKIT_API_SECRET="`. Tag `submission` and record the SHA.
 - **Form:** track *Put a Face to the Voice*, one-liner, 200-word write-up, 200-word how-built (manual turn control plus director, holding the floor, mode switch, server web search), team + GitHub handles, limitations.
-- **✅ C6:** fresh clone on the other laptop → README → it runs. Submitted by 14:50.
+- **✅ C6:** fresh clone on the other laptop → README → it runs. Submitted by 13:50 (deadline 2 PM).
 
-**15:00 presentation:**
+**15:00 group round (peers vote) and 17:00 finals (judges):**
 - Live demo, with the video as backup.
 - Create the avatar session early.
 - Have the `VIVA_AVATAR=0` fallback ready.

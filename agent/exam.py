@@ -16,6 +16,8 @@ import time
 from collections import deque
 
 import instructions as prompts
+import traps as trapbook
+from director import Decision
 from vad import PauseDetector
 
 log = logging.getLogger("viva.exam")
@@ -37,7 +39,9 @@ IGNORE_AFTER_S = 3.5  # still talking this long after a reminder means it was ig
 
 STT_PLACEHOLDER = "the transcription is not available"  # seen live from higgs-stt-3.1 when it fails
 BARGE_IN_S = 0.8  # presenter speech this long past the hold window cancels the examiner (Q&A); "um" is shorter
-MIN_ANSWER_WORDS = 3  # a Q&A turn needs this many non-filler words before the examiner replies
+MIN_ANSWER_WORDS = 3  # an answer to an interjection needs this many non-filler words before it is judged
+MIN_QA_ANSWER_WORDS = 5  # a Q&A answer needs this many: "Oh, we got here." (3) moved her on before (live run)
+QA_PATIENCE_S = {"high": 1.6, "medium": 2.0, "low": 2.5}  # silence before she replies in Q&A: thinking time
 AWAIT_REPLY_S = 25  # after an interjection, how long the examiner waits for the presenter's answer
 DEFERRED_FACTCHECK_S = 30  # a fact-check held back by its spacing rule is dropped if it can't fire within this
 # "Can I continue?" (live run: asked twice, ignored both times by the director as "procedural").
@@ -63,6 +67,12 @@ def interrupts_on_minor(character: dict) -> bool:
     return int(character.get("strictness", 3)) >= 5
 
 
+def insists_allowed(character: dict) -> int:
+    """How often she re-asks a question the presenter ignored: 2 (strictness 5), 1 (3-4), 0 (lenient)."""
+    strictness = int(character.get("strictness", 3))
+    return 2 if strictness >= 5 else 1 if strictness >= 3 else 0
+
+
 def guess_lang(text: str) -> str:
     if any("一" <= ch <= "鿿" for ch in text):
         return "zh"
@@ -72,8 +82,10 @@ def guess_lang(text: str) -> str:
 
 
 class ExamController:
-    def __init__(self, config, realtime, output, ui, slog, director, *, factcheck=True, reminder_before_s=120):
+    def __init__(self, config, realtime, output, ui, slog, director, *, factcheck=True, reminder_before_s=120,
+                 traps: list | None = None):
         self.config = config
+        self.traps = traps or []  # prepared interjections (traps.py): fire without waiting for the director
         self.realtime = realtime
         self.output = output
         self.ui = ui
@@ -87,6 +99,9 @@ class ExamController:
         self.cooldown = COOLDOWN_S.get(character.get("interrupt_rate", "medium"), 30)
         self.patience = PATIENCE_S.get(character.get("interrupt_rate", "medium"), 1.3)
         self.minor_ok = interrupts_on_minor(character)
+        self.qa_patience = QA_PATIENCE_S.get(character.get("interrupt_rate", "medium"), 2.0)
+        self.max_insists = insists_allowed(character)
+        self.carry_over: list[str] = []  # questions ignored during the talk: asked first in Q&A
         self.last_slide = max((s["index"] for s in config.get("slides", [])), default=1)
 
         self.phase = "waiting"
@@ -103,6 +118,8 @@ class ExamController:
         self.last_speech_start = 0.0
         self.last_examiner_request = 0.0
         self.answer_words = 0
+        self.answer_open_since = 0.0  # Q&A: speech counts as the answer only from when her question has played
+        self.chunk_started_at = 0.0  # when the speech in the current chunk began
         # After an interjection has played the presenter owes an answer: {"since", "asked", "answer": [chunks]}.
         # The director judges the answer (acknowledge / keep waiting / fact-check) with that context.
         self.awaiting: dict | None = None
@@ -191,7 +208,7 @@ class ExamController:
             return False
         if metric:
             self.pending_metric = (metric, ref or self.pause_at or time.monotonic())
-        if kind in ("interjection", "factcheck", "reminder", "escalation", "time_up"):
+        if kind in ("interjection", "factcheck", "insist", "reminder", "escalation", "time_up"):
             await self.ui_state("interjecting")
         return True
 
@@ -218,7 +235,7 @@ class ExamController:
 
     async def _commit(self) -> None:
         self.last_commit = time.monotonic()
-        meta = {"slide": self.chunk_slide, "pause_at": self.last_commit}
+        meta = {"slide": self.chunk_slide, "pause_at": self.last_commit, "started": self.chunk_started_at}
         outcome = await self.realtime.commit()
         if outcome in ("sent", "queued"):
             self.commits.append(meta)
@@ -232,6 +249,7 @@ class ExamController:
         self.last_speech_start = time.monotonic()
         if time.monotonic() - self.last_commit > 0.3:
             self.chunk_slide = self.slide
+            self.chunk_started_at = self.last_speech_start
         if self.qa_turn:
             self.qa_turn.cancel()  # they are still answering
             self.qa_turn = None
@@ -285,12 +303,17 @@ class ExamController:
                 self.awaiting["answer"].append(text)
                 if content_words(text) < 2:
                     return  # "okay", "haha": keep waiting, no director call
+            elif await self._try_trap(text, meta):
+                return  # a predicted weak claim: interjected at once, no director round-trip
             self._spawn(self.maybe_direct(text, meta))
         elif self.phase == "qa":
-            self.answer_words += content_words(text)
+            # Only speech that began after her question finished playing is an answer (a reaction while
+            # she was still asking moved her on before the presenter had started answering).
+            if meta.get("started", 0.0) >= self.answer_open_since - 0.3:
+                self.answer_words += content_words(text)
             # The transcript can land after the end-of-turn check ran: if this made it a real answer
             # and the presenter has stopped, check again so the examiner doesn't wait forever.
-            if (self.answer_words >= MIN_ANSWER_WORDS and not self.presenter_speaking
+            if (self.answer_words >= MIN_QA_ANSWER_WORDS and not self.presenter_speaking
                     and (self.qa_turn is None or self.qa_turn.done())):
                 self.qa_turn = self._spawn(self._qa_end_of_turn())
 
@@ -324,6 +347,8 @@ class ExamController:
                 return
             if u is None:
                 return
+            if u["kind"] in ("interjection", "factcheck_answer", "insist") and self.phase == "presentation":
+                self._open_exchange(u["kind"])  # from now on the presenter owes an answer (not from playback end)
             if u.get("audio"):
                 # When it should have finished playing, with slack for the avatar (watchdog).
                 start = max(time.monotonic(), self.playing[-1]["play_end"] if self.playing else 0.0)
@@ -400,12 +425,11 @@ class ExamController:
         elif kind == "verdict":
             await self.finish()
             return
-        if kind in ("interjection", "factcheck_answer") and self.phase == "presentation" and not interrupted:
-            # The presenter owes an answer; the director judges it when it comes.
-            self.awaiting = {"since": time.monotonic(), "asked": self.last_examiner_text, "answer": [],
-                             "index": len(self.interjections) - 1}
-        elif kind == "ack":
+        if kind == "ack":
             self.awaiting = None
+        elif kind == "qa" and self.phase == "qa":
+            # Her question has played (or the presenter cut in): the answer starts now.
+            self.answer_words, self.answer_open_since = 0, time.monotonic()
         await self.idle_state()
 
     # ------------------------------------------------------------------ presentation
@@ -444,18 +468,32 @@ class ExamController:
                                    f"say from what you know whether this claim is right, starting with the correction: {claim}",
                                    max_tokens=80)
             if self.awaiting and now - self.awaiting["since"] > AWAIT_REPLY_S:
-                self.awaiting = None  # they carried on without answering; let the director back in
+                # Never answered: keep the question for Q&A, and let the director back in.
+                if self.awaiting["is_question"]:
+                    self.carry_over.append(self.awaiting["asked"])
+                self.awaiting = None
             if self.deferred and self.phase == "presentation":
                 d, meta, at = self.deferred
                 if now - at > DEFERRED_FACTCHECK_S:
                     self.deferred = None  # too late to be relevant
-                elif not self.engaged and not self._reminder_open() and self._allowed(meta["slide"])[1]:
+                elif (not self.engaged and not self.awaiting and not self._reminder_open()
+                      and self._allowed(meta["slide"])[1]):
                     self.deferred = None
                     await self.interject(d, {**meta, "pause_at": now})
             while self.playing and now > self.playing[0]["expected_end"]:
                 u = self.playing.popleft()
                 log.warning("watchdog: no playback_finished for %s; assuming it finished", u["kind"])
                 await self._utterance_finished(u, interrupted=False)
+
+    def _open_exchange(self, kind: str) -> None:
+        """She has interrupted (or re-asked): the presenter owes an answer, judged by the director."""
+        now = time.monotonic()
+        if kind == "insist" and self.awaiting:
+            self.awaiting.update(since=now, answer=[])  # same question, asked again
+            return
+        text = self.last_examiner_text
+        self.awaiting = {"since": now, "asked": text, "answer": [], "index": len(self.interjections) - 1,
+                         "insists": 0, "is_question": "?" in text}
 
     def _allowed(self, slide: int) -> tuple[bool, bool]:
         """(interjection allowed, fact-check allowed) right now, by cooldowns and caps."""
@@ -510,11 +548,18 @@ class ExamController:
                 await self.say("ack", f"Say, in character: \"{cue}\"", max_tokens=40,
                                metric="answer_end_to_reply", ref=meta["pause_at"])
             return
+        if d.action == "insist":
+            if not awaiting or self.awaiting is not awaiting or self.phase != "presentation":
+                return
+            await self._insist(awaiting, d.cue, meta)
+            return
         interject_ok, factcheck_ok = self._allowed(meta["slide"])  # state may have moved on during the call
         if self.awaiting:
             interject_ok = False
-        if d.action == "factcheck" and self.factcheck_enabled and not factcheck_ok and not self.deferred:
-            self.deferred = (d, meta, time.monotonic())  # held back only by spacing: fire it when allowed
+        if (d.action == "factcheck" and self.factcheck_enabled and not self.deferred
+                and (not factcheck_ok or self.awaiting)):
+            # Held back by spacing, or by a question still waiting for its answer: fire it when allowed.
+            self.deferred = (d, meta, time.monotonic())
             return
         if (d.action == "interject" and not interject_ok) or (d.action == "factcheck" and not factcheck_ok):
             return
@@ -523,6 +568,47 @@ class ExamController:
         if d.action == "none" or self.phase != "presentation" or self.engaged or self._reminder_open():
             return
         await self.interject(d, meta)
+
+    async def _try_trap(self, text: str, meta: dict) -> bool:
+        """Fire a prepared interjection if this chunk makes a predicted weak claim and the rules allow it now."""
+        trap = trapbook.match(self.traps, text, meta["slide"])
+        if (trap is None or self.engaged or self._reminder_open() or self.elapsed() < NO_INTERJECTION_BEFORE_S
+                or (trap.action == "factcheck" and not self.factcheck_enabled)):
+            return False
+        interject_ok, factcheck_ok = self._allowed(trap.slide)
+        d = Decision(action=trap.action, kind="factcheck" if trap.action == "factcheck" else "question_closed",
+                     severity="major", reason=f"prepared: {trap.reason}", cue=trap.cue, claim=trap.claim, ms=0)
+        meta = {**meta, "slide": trap.slide}
+        if trap.action == "factcheck" and not factcheck_ok:
+            if not self.deferred:
+                trap.used = True
+                self.deferred = (d, meta, time.monotonic())  # held back by spacing: fire when allowed
+            return trap.used
+        if trap.action == "interject" and not interject_ok:
+            return False  # spacing or one-per-slide: leave it to the director later
+        trap.used = True
+        self.slog.write("director", action=d.action, severity=d.severity, reason=d.reason, cue=d.cue, ms=0)
+        log.info("trap %s on slide %d: %s", d.action, trap.slide, d.cue)
+        await self.interject(d, meta)
+        return True
+
+    async def _insist(self, awaiting: dict, cue: str, meta: dict) -> None:
+        """The presenter moved on without answering. An examiner demands the answer; how many times
+        depends on the character (insists_allowed). Past that, the question is carried into Q&A."""
+        if not awaiting["is_question"]:
+            self.awaiting = None  # she made a correction, not a question: moving on is fine
+            return
+        if awaiting["insists"] < self.max_insists:
+            awaiting["insists"] += 1
+            cue = cue or "Hold on. You haven't answered my question."
+            await self.say("insist", "The presenter moved on without answering your question. Cut in firmly and hold "
+                           f"the floor. Say, in character: \"{cue}\"", hold=True, max_tokens=60,
+                           metric="pause_to_interjection", ref=meta["pause_at"])
+            return
+        self.awaiting = None
+        self.carry_over.append(awaiting["asked"])
+        await self.say("ack", "The presenter still has not answered your question. Say in one short sentence that "
+                       "you will come back to it in the questions, then tell them to continue.", max_tokens=40)
 
     async def interject(self, d, meta: dict) -> None:
         slide = meta["slide"]
@@ -548,6 +634,8 @@ class ExamController:
         else:
             self.interjected_slides.add(slide)
             cue = d.cue or "What is your evidence for that?"
+            if slide < self.slide:
+                cue = f"Going back to slide {slide}: {cue}"  # they have already clicked on
             await self.say("interjection", f"Interject now, cutting in while the presenter is mid-flow. Say, in character: \"{cue}\"",
                            hold=True, max_tokens=90, metric="pause_to_interjection", ref=meta["pause_at"])
 
@@ -617,7 +705,9 @@ class ExamController:
         weak = [s for s in self.config.get("slides", []) if s.get("weak_points") and s.get("questions")]
         main = [s["questions"][0] for s in weak if s["index"] not in self.interjected_slides]
         follow_ups = [q for s in weak for q in s["questions"][1:2]]
-        return list(dict.fromkeys(main + follow_ups))[:4]
+        # Questions the presenter ignored during the talk come first.
+        unanswered = [f"Earlier you did not answer this, so answer it now: {q}" for q in self.carry_over]
+        return list(dict.fromkeys(unanswered + main + follow_ups))[:4]
 
     def next_question(self) -> str | None:
         return self.questions.pop(0) if self.questions else None
@@ -642,13 +732,13 @@ class ExamController:
         await self.enter_debrief()
 
     async def _qa_end_of_turn(self) -> None:
-        await asyncio.sleep(max(0.0, self.patience - VAD_SILENCE_S))
+        await asyncio.sleep(max(0.0, self.qa_patience - VAD_SILENCE_S))  # thinking time: longer than in the talk
         if self.engaged:  # e.g. the cancelled reply after a barge-in is still winding down
             await self.wait_idle(timeout=3)
-        # Reply only to a real answer that began after the examiner last asked something: "um", "oh" or
-        # "yeah" alone is not a turn (live run: each filler got a reply and the exchange turned rapid-fire).
+        # Reply only to a real answer that began after her question had played: "um", "oh" or a reaction
+        # while she was still asking is not an answer (live runs: both moved her on too early).
         if (self.phase == "qa" and not self.presenter_speaking and not self.engaged
-                and self.last_speech_start > self.last_examiner_request and self.answer_words >= MIN_ANSWER_WORDS):
+                and self.last_speech_start > self.answer_open_since and self.answer_words >= MIN_QA_ANSWER_WORDS):
             q = self.next_question()
             if q:
                 await self.say("qa", f"React to the presenter's answer in at most one sentence, then ask: {q}",

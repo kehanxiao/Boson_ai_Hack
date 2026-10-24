@@ -23,6 +23,7 @@ import websockets  # noqa: E402
 from livekit import rtc  # noqa: E402
 
 from common import AUTH, REALTIME_URL, tts_pcm  # noqa: E402  (loads .env)
+import traps  # noqa: E402
 from director import Director  # noqa: E402
 from exam import ExamController  # noqa: E402
 from main import realtime_session  # noqa: E402
@@ -166,7 +167,9 @@ async def main() -> None:
             await controller.on_realtime_event(kind, event)
 
     realtime = RealtimeClient(REALTIME_URL, AUTH["Authorization"].split(" ", 1)[1], on_event)
-    controller = ExamController(config, realtime, SimulatedOutput(), PrintUI(now), slog, Director(config), reminder_before_s=45)
+    prepared = await traps.build(config, cache_path=ROOT / "agent" / "runs" / "demo-traps.json")
+    controller = ExamController(config, realtime, SimulatedOutput(), PrintUI(now), slog, Director(config),
+                                reminder_before_s=45, traps=prepared)
     await realtime.connect(realtime_session(config))
     await asyncio.sleep(1.5)
     mic = Mic(controller)
