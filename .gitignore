@@ -43,3 +43,6 @@ agent/probes/.cache/
 
 # Agent session logs (uploaded to the server at the end of a run)
 agent/runs/
+
+# Office lock files (a document is open in Word)
+~$*
