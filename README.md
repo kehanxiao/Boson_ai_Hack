@@ -4,8 +4,8 @@
 
 Built for the Boson AI × MScAC Higgs Audio Hackathon 2026, track *Put a Face to the Voice*. The examiner is a [Higgs Avatar](https://docs.boson.ai) driven by `higgs-realtime-1.5-preview`.
 
-<!-- TODO before submission: demo video link, member names and GitHub handles. -->
-**Demo video:** _TODO_ · **Team:** Viva (_members: TODO_)
+<!-- TODO before submission: demo video link. -->
+**Demo video:** _TODO_ · **Team Viva:** Joel Rompis ([@DaWanAnOnli](https://github.com/DaWanAnOnli)) and KeHan Xiao ([@kehanxiao](https://github.com/kehanxiao))
 
 ## The problem
 Every AI is built to be your assistant. Practising a thesis defense, a capstone presentation or an assignment oral needs the opposite: an **examiner**. Someone who stops you at the weak claim, asks "better than *what*?", and doesn't let you run over time. Students rarely get to rehearse in front of a real examiner. Viva gives them one that is demanding but fair, and that tells them afterwards exactly where they lost marks.
