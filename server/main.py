@@ -1,4 +1,4 @@
-"""Viva server. Run: uv run uvicorn main:app --reload --port 8000"""
+"""Viva server. Run: uv run uvicorn main:app --port 8000"""
 
 from contextlib import asynccontextmanager
 

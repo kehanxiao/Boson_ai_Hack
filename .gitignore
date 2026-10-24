@@ -46,3 +46,4 @@ agent/runs/
 
 # Office lock files (a document is open in Word)
 ~$*
+.ruff_cache/

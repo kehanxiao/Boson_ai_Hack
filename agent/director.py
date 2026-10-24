@@ -1,5 +1,8 @@
 """The director: a fast Haiku call that decides whether the examiner should cut in now.
 
+Retired Sat 01:00: the live examiner's brain is a Higgs Realtime session (brain.py). This is kept only
+for the comparison in probes/higgs_brain.py.
+
 It reads the presenter's latest chunk in context (current slide, its weak points, recent
 transcript, earlier interjections) and returns a structured decision. Cooldowns and caps
 are enforced by the caller, not by the model.

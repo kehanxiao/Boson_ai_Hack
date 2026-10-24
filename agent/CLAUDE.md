@@ -1,13 +1,13 @@
 # agent/: Role A, live examiner runtime (Python)
 
-A hand-built worker: joins the LiveKit room, starts a Higgs Avatar session, and drives a raw Higgs Realtime WebSocket. It owns turn-taking: VAD commits, the director, holding the floor, the timer and phases. Design rationale: `PLAN.md` → "Core design decisions" and "Architecture".
+A hand-built worker: joins the LiveKit room, starts a Higgs Avatar session, and drives a raw Higgs Realtime WebSocket. It owns turn-taking: VAD commits, asking the brain, holding the floor, the timer and phases. Design rationale: `PLAN.md` → "Core design decisions" and "Architecture".
 
 ## Files
 **Two Higgs Realtime sessions hear the presenter** (since Sat 01:00; see "Higgs brain" below):
 - the **brain** (`brain.py`, text only) decides what the examiner does;
 - the **voice** speaks the brain's lines word for word through the avatar, transcribes for captions, and runs the web search.
 
-- `main.py`: live entry point (`uv run main.py [session_id]`, `VIVA_AVATAR=0` for voice-only, `VIVA_FACTCHECK=0`). Joins the room, starts the avatar unless the session says `avatar: false` (the Setup page's *Voice only*) or `VIVA_AVATAR=0` (429 retry), loads SessionConfig from the server (falls back to `demo/` for `demo` and `gradebook`), connects both sessions, forwards presenter audio, handles `viva.ctl`, releases the avatar with retries, uploads the log.
+- `main.py`: live entry point (`uv run main.py [session_id]`, `VIVA_AVATAR=0` for voice-only, `VIVA_FACTCHECK=0`). Joins the room, starts the avatar unless the session says `avatar: false` (the Setup page's *Voice only*) or `VIVA_AVATAR=0` (429 retry), loads SessionConfig from the server (falls back to `demo/` for `demo`, `gradebook` and `demo3`), connects both sessions, forwards presenter audio, handles `viva.ctl`, releases the avatar with retries, uploads the log.
 - `brain.py`: the brain session. When asked, it answers one line: `SILENT`, `SAY: <words>`, `CHECK: <claim>`, or (Q&A) `END: <words>`. It gets the same audio and commits as the voice, plus `[bracketed]` notes: the slide, what she said that it didn't write (greeting, reminders, search results), and being talked over.
 - `exam.py`: `ExamController`, the exam logic around the brain. The rules it keeps:
   - **When the brain is asked:** at each presenter pause, except while she speaks, and for `GAP_S` (4 s for medium) after she has spoken. A pause inside the gap is judged when the gap ends.
@@ -24,14 +24,14 @@ A hand-built worker: joins the LiveKit room, starts a Higgs Avatar session, and 
   - **A pause in a quiet window or the gap is judged when that ends** (`_gap_pending`), not dropped ("May I continue now?" after a reminder).
   - **An untagged spoken line is taken as SAY**, or as CHECK if it announces a look-up. This is logged, and `parse()` stays strict.
   - **Never the same point a third time** (`said`, word overlap). Lines of 5 words or fewer are exempt ("Yes, go on."), and a cut-off line counts toward the follow-ups.
-  - **She is "speaking" only while the room hears her** (`output.on_started` → `audible_at`, until playback finishes). The avatar reports `lk.playback_started` (`wait_playback_start=True`), or the start is estimated at 1.3 s after the first captured audio. The floor-hold, talked-over detection and the brain's order all use this clock.
+  - **She is "speaking" only while the room hears her** (`output.on_started` → `audible_at`, until playback finishes). The avatar may report `lk.playback_started` (`wait_playback_start=True`). Boson's avatar didn't in live runs, so the start is estimated at 1.3 s after the first captured audio. The floor-hold, talked-over detection and the brain's order all use this clock.
     - **The brain's order:** `brain.mark()` commits the audio so far, then adds "[She starts speaking now.]" or "[She has finished speaking.]". When a decision is being written, the note waits behind the queued commit.
     - **Overlap:** while she is heard, presenter audio is held back from the brain. If they stopped before she finished (trailing off, "yeah"), it is dropped. If they were still talking as she finished, or talked over her (barge-in), it is passed on. Live run (Sat 04:30): the brain took overlap as their answer and her line as earlier than it was heard.
     - A talk-over → she stops, and the brain decides between "Let me finish, please." and answering what they said.
   - **Silence in the presentation:** after `TALK_SILENCE_S` (4 s) with nobody speaking, and no search or decision under way, she urges them on ("Please continue."). This happens at most twice per silence; before they have said anything, the line is "Please begin when you're ready."
   - **Holding the floor:** 1.5 s. Reminder → acknowledgement (phrase / silence / jump to the last slide) → one escalation.
   - **Talked over:** her brain lines and Q&A questions stop when the presenter keeps talking past the hold window (cancel + clear + truncate). The brain is told what the presenter heard. Reminders, fact-checks and the verdict hold the floor.
-    - Q&A: 0.8 s past the hold.
+    - Q&A: 1.5 s past the hold (`BARGE_IN_S`). At 0.8 s, a presenter finishing their sentence cut her questions.
     - Presentation: 2.5 s past the hold, in one unbroken stretch, because she was the one who cut in. At 0.8 s, the presenter finishing their sentence cut every interjection after a word or two.
   - **Q&A time-up:** the exchange under way may finish (25 s grace), then the brain ENDs and the voice gives the verdict.
   - It tracks every utterance from request to finished playing, including the server's own follow-up after a web search.
@@ -66,7 +66,7 @@ Stack: uv, Python 3.12, `livekit-agents` 1.8.8 (for `DataStreamAudioOutput`), `l
 - **`response.create`** takes a `response` object with per-response `instructions`, `input` (message items, also appended to the conversation), `max_output_tokens` and `metadata`. Use it to deliver a director cue.
 - **`conversation.item.create`** (text message) never triggers a response. Use it for "[Presenter is now on slide N: …]" context.
 - **Cancel cleanly:** `response.cancel`, then `DataStreamAudioOutput.clear_buffer()`, then `conversation.item.truncate {item_id, content_index, audio_end_ms}`, so the transcript matches what was heard.
-- **Q&A mode:** `session.update` → `turn_detection: {type: "server_vad"}`. With server VAD, presenter speech auto-cancels the examiner (native barge-in). Mid-session switching is unverified; see K5 in `PLAN.md`.
+- **Q&A mode:** `session.update` → `turn_detection: {type: "server_vad"}`. With server VAD, presenter speech auto-cancels the examiner (native barge-in). Superseded: mid-session switching turned out to be impossible (K3 + K5 below), so Q&A also runs on manual turns.
 - **Transcription:** `audio.input.transcription: {model: "higgs-stt-3.1"}`. Only `conversation.item.input_audio_transcription.completed` exists (no deltas).
 - **Function tools:** flow is `response.function_call_arguments.done` → `response.done` carries the `function_call` item → send `conversation.item.create {type: function_call_output, call_id, output}` → `response.create`.
 - **Server web search:** declare `{"type": "web_search"}` in `session.tools` (optionally `allowed_domains` / `excluded_domains`, max 5, mutually exclusive). Calls arrive with `executor: "server"`. **Do not** answer them or send `response.create`; the server continues by itself. Never name a function tool `web_search`.
@@ -136,7 +136,7 @@ Stack: uv, Python 3.12, `livekit-agents` 1.8.8 (for `DataStreamAudioOutput`), `l
   - Transcription on or off and a note before every chunk made no difference.
 - **No transcription on the brain:** it hears the audio itself. Captions and the log come from the voice session's STT.
 - **It prefers correcting from memory over CHECK** ("sorted uses Timsort, not quicksort"). The prompt asks for CHECK on outside-world facts, so the presenter sees the evidence.
-- **Verdict:** asked with its own instructions (`brain(config, "verdict")`, `SAY: Verdict: …`). With the Q&A instructions it answered SILENT.
+- **Verdict (superseded):** at first the brain was asked for it with its own instructions (`SAY: Verdict: …`); with the Q&A instructions it answered SILENT. Now the voice gives the verdict (`enter_debrief` in `exam.py`).
 - **Voice responses can fail upstream** (`response.done status=failed`, "an upstream service call did not complete"). This happened about once per sim. Our requests are retried once.
 - ⚠️ **A response asked for right after another response starts late.** A voice `response.create` sent within ~1 s of a brain `response.done` takes ~1.6–1.8 s to its first audio; 0.8 s later it takes ~0.36 s (`probes/two_session_latency.py`, 5 rounds).
   - The cause is not the voice's own commit (`probes/voice_latency.py`) and not the brain's commit.

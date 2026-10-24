@@ -2,7 +2,7 @@
 
 Pages: `Setup` → `Session` → `Scorecard`. The message and API contract is **fixed** by `PLAN.md` → "Interfaces between A and B".
 
-Stack: Vite, React, TS, `livekit-client`, `@livekit/components-react`. Server base URL comes from `VITE_SERVER_URL`.
+Stack: Vite, React, TS, `livekit-client`. Server base URL comes from `VITE_SERVER_URL`.
 
 ## Pages
 - **Setup:** the 5 inputs:

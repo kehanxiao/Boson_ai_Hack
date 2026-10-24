@@ -2,7 +2,7 @@
 
 Owns token minting, deck upload and prep, the session config the agent fetches, and the scorecard. API shapes are **fixed** by `PLAN.md` → "Interfaces between A and B". The sample responses are `demo/session-config.json` and `demo/sample-scorecard.json`.
 
-Stack: uv, Python 3.11+, `fastapi`, `uvicorn`, `python-multipart`, `livekit-api` (token minting), `pymupdf` (PDF → PNG + text), `anthropic`, `python-dotenv`. Run: `uv run uvicorn main:app --reload --port 8000`. Enable CORS for the Vite dev origin (`http://localhost:5173`).
+Stack: uv, Python 3.12+, `fastapi`, `uvicorn`, `python-multipart`, `livekit-api` (token minting), `pymupdf` (PDF → PNG + text), `anthropic`, `python-dotenv`. Run: `uv run uvicorn main:app --port 8000`. Enable CORS for the Vite dev origin (`http://localhost:5173`).
 
 ## Endpoints (contract)
 - `GET /token?room=&identity=` → `{url, token}`. A LiveKit AccessToken with roomJoin for `room`, publish/subscribe, and publish data. `url` = `LIVEKIT_URL`.
@@ -19,7 +19,7 @@ Stack: uv, Python 3.11+, `fastapi`, `uvicorn`, `python-multipart`, `livekit-api`
 - **Per slide, in parallel:** Haiku (`VIVA_HAIKU_MODEL`, default `claude-haiku-5-5`) gets the slide PNG plus extracted text, and returns `{summary, claims[], weak_points[], questions[]}` through structured outputs (`output_config.format`).
   - Haiku 5.5 image support is assumed. Check it in K6; the fallback is a text-only prompt.
   - Keep each call small; use `max_tokens` around 1–2K.
-- **Instructions:** `SessionConfig.instructions` is optional and **ignored by the agent** (contract, Fri 23:50); A builds the phase instructions in `agent/instructions.py`. The server still fills it with a readable brief for debugging, independent of `agent/prompts/`.
+- **Instructions:** `SessionConfig.instructions` is optional (contract, Fri 23:50). A builds the phase instructions in `agent/instructions.py` and reads only the supporting-document excerpt from this field (between `Supporting document (excerpt):` and `Slide digest:`), so keep those two markers. The server still fills it with a readable brief for debugging, independent of `agent/prompts/`.
 - Claude calls use the official Anthropic Python SDK only. No OpenAI-compatible shims.
 
 ## Scorecard (`scorecard.py`)
@@ -39,7 +39,7 @@ Stack: uv, Python 3.11+, `fastapi`, `uvicorn`, `python-multipart`, `livekit-api`
 - Pipeline: validate fields and PDF (≤ 30 MB, 1–40 pages) → `data/<id>/deck.pdf` → render → prep (Haiku) → `config.json` (SessionConfig) + `prep.json` (timing and per-slide errors, not part of the contract). About 3 s for 6 slides.
 - `session_id` = `s` + 10 hex chars (also the LiveKit room name).
 - **Character field:** `character` is a preset id. Optional free text (`custom_text`, or `character` itself when it isn't a preset id) is appended to the base preset's persona. With no preset given, the base is `supervisor`. `character.id` stays the base preset id. ⚠️ This is our reading of "`character` = preset id or `custom_text`"; confirm with A.
-- **Instructions** (`instructions.py`): a fixed base brief + character + scenario + times + notes + support-doc excerpt (≤ 4000 chars) + a slide digest with weak points. Informational only (the agent ignores it), and it no longer reads `agent/prompts/`.
+- **Instructions** (`instructions.py`): a fixed base brief + character + scenario + times + notes + support-doc excerpt (≤ 4000 chars) + a slide digest with weak points. Informational, except the support-doc excerpt, which the agent reads; it no longer reads `agent/prompts/`.
 - If a slide's Haiku call fails, that slide falls back to its own text and the session is still created. If rendering fails, the folder is removed and the request returns 500.
 
 ## Scorecard (built Fri 23:30, `scorecard.py`)
@@ -59,6 +59,7 @@ Stack: uv, Python 3.11+, `fastapi`, `uvicorn`, `python-multipart`, `livekit-api`
 - `demo` (ERwait, the contract examples) and `gradebook` (GradeBook, the demo-video deck, agreed with A) are served from `demo/` files: config, slides rendered from the deck PDF into `data/<id>/` at startup, and a log upload.
 - Scorecard: `demo` always returns `sample-scorecard.json`. `gradebook` generates from the uploaded log like any other session (no sample to fall back on).
 - `demo/session-config-coding.json` comes from `scripts/make_gradebook_session.py` (Supervisor, Assignment oral, 240 + 90 s); re-run it after regenerating `prepped-analysis-coding.json`. A's agent falls back to the same file when the server is down; so does the web app.
+- `demo3` (A's 3-slide, 3-minute session with no Q&A, used for the demo video) is served the same way: `demo/session-config-demo3.json` from `scripts/make_demo3_session.py`, the deck from `scripts/make_demo3_deck.py`. The agent falls back to it too; the web app has no bundled copy.
 - The scorecard drops a model "weak" moment on the same line as a code-detected "unacknowledged" one (it duplicated it in testing).
 - ⚠️ **`uvicorn --reload` is unreliable on Windows here.** Twice it missed a change to `sessions.py`, and stopping it once left an orphaned worker still answering on port 8000 with old code. If behaviour doesn't match the code: stop every `uvicorn`/`multiprocessing.spawn` python process, then start without `--reload`.
 - Deck scripts now fail loudly when text doesn't fit its box (`textbox()` in `make_placeholder_deck.py`). PyMuPDF silently dropped the GradeBook title before; deck, analysis and `gradebook` config were regenerated (all planted weaknesses still caught).

@@ -6,15 +6,16 @@
 {"t": 15.2, "kind": "chunk", "slide": 2, "lang": "en", "text": "Long waits are a real problem. About one in twenty patients leave without being seen."}
 {"t": 32.5, "kind": "slide", "index": 3}
 {"t": 34.0, "kind": "chunk", "slide": 3, "lang": "en", "text": "And the headline: our model is forty percent better, which is a big step forward for the hospital."}
-{"t": 34.9, "kind": "director", "action": "interject", "reason": "Unsupported comparative claim; no baseline or metric on slide 3.", "cue": "Ask what the 40% is relative to, and on which metric."}
-{"t": 35.6, "kind": "interjection", "slide": 3, "reason": "No baseline or metric for the 40% claim."}
+{"t": 34.9, "kind": "director", "action": "say", "cue": "Hold on. Forty percent better than what? What's the baseline, and what's the metric?", "ms": 452, "reason": "higgs brain"}
+{"t": 35.6, "kind": "interjection", "slide": 3, "reason": "Hold on. Forty percent better than what? What's the baseline, and what's the metric?"}
 {"t": 35.7, "kind": "examiner", "slide": 3, "text": "Hold on. Forty percent better than what? What's the baseline, and what's the metric?"}
 {"t": 39.4, "kind": "chunk", "slide": 3, "lang": "en", "text": "Sorry, the baseline is the hospital's current rolling average, and the metric is mean absolute error."}
-{"t": 45.0, "kind": "director", "action": "none", "reason": "Answer is adequate; cooldown active."}
+{"t": 45.0, "kind": "director", "action": "silent", "cue": "", "ms": 318, "reason": "higgs brain"}
 {"t": 58.2, "kind": "slide", "index": 4}
 {"t": 96.4, "kind": "slide", "index": 5}
 {"t": 98.0, "kind": "chunk", "slide": 5, "lang": "en", "text": "We used LightGBM, which Google released in 2020, with rolling-window validation."}
-{"t": 98.7, "kind": "director", "action": "interject", "reason": "Checkable factual claim about LightGBM's origin.", "cue": "Fact-check the claim with web search, then state the correction briefly."}
+{"t": 98.7, "kind": "director", "action": "check", "cue": "LightGBM was released by Google in 2020", "ms": 470, "reason": "higgs brain"}
+{"t": 98.7, "kind": "interjection", "slide": 5, "reason": "fact-check: LightGBM was released by Google in 2020"}
 {"t": 99.3, "kind": "factcheck", "status": "searching", "claim": "LightGBM was released by Google in 2020"}
 {"t": 99.4, "kind": "examiner", "slide": 5, "text": "Let me check that."}
 {"t": 103.9, "kind": "factcheck", "status": "done", "claim": "LightGBM was released by Google in 2020", "sources": ["https://github.com/microsoft/LightGBM"]}

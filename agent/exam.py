@@ -48,7 +48,7 @@ SLIDE_SETTLE_S = 5.0
 # While she is heard, the presenter's speech is held back from the brain: a short overlap (trailing off, a reflex
 # "yeah") is dropped when she finishes, and only a real talk-over (barge-in) is passed on. Taken as their answer,
 # overlap made her react to words said while she was talking (live run, Sat 04:30).
-OVERLAP_MAX_BYTES = 20 * 24_000 * 2  # at most 20 s held  # after she has pressed a point as far as her character does, she lets the presenter move on
+OVERLAP_MAX_BYTES = 20 * 24_000 * 2  # at most 20 s held
 EXCHANGE_S = 20  # after she cuts in, the presenter's next words are a reply: the brain hears every pause
 FACTCHECK_SPACING_S = 10  # between two web searches
 MAX_CHUNK_S = 10  # force a commit during long unbroken speech so the brain isn't deaf

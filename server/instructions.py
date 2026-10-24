@@ -1,7 +1,8 @@
 """Assemble SessionConfig.instructions: a readable summary of the examiner brief.
 
-The contract marks `instructions` optional and the agent ignores it (it builds its own phase
-instructions in agent/instructions.py), so this is for debugging and inspection only.
+The contract marks `instructions` optional. The agent builds its own phase instructions in
+agent/instructions.py and reads only the support-doc excerpt from this text (between
+"Supporting document (excerpt):" and "Slide digest:"); the rest is for debugging and inspection.
 Deliberately independent of agent/prompts/ so changes there can't affect the server.
 """
 

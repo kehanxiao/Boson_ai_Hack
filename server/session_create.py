@@ -1,7 +1,8 @@
 """POST /api/sessions: upload a deck, render it, run prep, save the SessionConfig.
 
 Multipart fields (contract, PLAN.md): scenario, character, time_limit_s, qa_s, notes,
-slides (PDF), optional support_doc. `custom_text` is optional free text for a custom character.
+slides (PDF), optional support_doc, optional avatar (true|false, default true: false is voice only).
+`custom_text` is optional free text for a custom character.
 Response: {session_id, slide_count}. Takes a few seconds (prep runs before returning).
 """
 

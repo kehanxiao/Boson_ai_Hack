@@ -3,8 +3,8 @@
 - The brain (brain.py) hears the presenter and decides what she does: brain(config, phase).
 - The voice speaks the brain's lines and runs web searches: for_phase() and with_cue().
 
-The agent assembles these itself (it owns the phases); SessionConfig.instructions from the
-server is not needed for that and is ignored.
+The agent assembles these itself (it owns the phases). From SessionConfig.instructions it reads only
+the supporting-document excerpt (support_excerpt).
 """
 
 import pathlib

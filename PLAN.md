@@ -1,5 +1,21 @@
 # Viva: an AI examiner for presentation defenses (Higgs Audio Hackathon build plan)
 
+> **Final state (Sat 10:30). Read this first.** Below is the Friday build plan, kept as written, with status notes added as checkpoints passed. Where it differs from this box, the code and the README are right.
+> - **The examiner's brain is a second, text-only Higgs Realtime session** (`agent/brain.py`), not the Claude Haiku director (decision below, Sat 01:00). Haiku does slide prep and the scorecard only. Everything below about the director, its cues, cooldowns of 20/30/45 s, "no interruptions in the first 20 s", "at most one per slide", major/minor issues and a prepared question bank is superseded.
+> - **Turn-taking is manual for the whole session, Q&A included.** `turn_detection` can't change mid-session (K5), so there is no switch to `server_vad`.
+> - **Timing now** (`agent/exam.py`):
+>   - After she speaks she waits 3 s (`high`), 4 s (`medium`) or 8 s (`low`) before raising something new. She presses a point once, or twice at strictness 5.
+>   - She holds the floor for 1.5 s. She can be talked over after 2.5 s in the talk and 1.5 s in Q&A; reminders, fact-checks and the verdict can't be talked over.
+>   - A reminder is acknowledged by 1 s of silence, an acknowledging phrase, or jumping to the last slide.
+>   - She nudges after 4 s of silence.
+>   - The early time reminder comes at T−2, or T−1 for a talk under 5 minutes.
+> - **The voice gives the verdict** when Q&A is on. A session with `qa_s: 0` has no Q&A and no verdict.
+> - **Never built:** `floor.py`, `timer.py`, `phases.py` and `prompts/characters/` (that logic lives in `agent/exam.py` and the character's `persona`), and `docs/architecture.png` (the diagram is in the README).
+> - **Checkpoints:**
+>   - C0–C3 passed (notes below).
+>   - C4: `rc` tagged Sat 09:20.
+>   - C5 (video) and C6 (fresh clone, submission) are Sat 11:30–13:50.
+>
 > **Decision (Sat 01:00): Higgs is the examiner's brain; the Haiku director and prepared interjections are retired.**
 > - **Why:** the live run felt "programmed". Deliberate errors were missed (the director had labelled them minor or held them back by cooldown), and talking over her did nothing.
 > - **The new design:**
@@ -9,7 +25,7 @@
 > - **Measured:**
 >   - Higgs caught 6/6 planted errors in each of 3 runs at ~0.5 s per decision. Haiku caught 5–6/6 at 1.5–1.9 s (`agent/probes/higgs_brain.py`).
 >   - The full headless sims pass (`agent/probes/exam_sim.py demo|gradebook`).
-> - **Unchanged for B:** `viva.ui` / `viva.ctl` and the log format. The log's `director` lines now come from the brain (`action` is `say|check|silent|end|talked_over`).
+> - **Unchanged for B:** `viva.ui` / `viva.ctl` and the log kinds. The log's `director` lines now come from the brain: `{action, cue, ms, reason}`, with `action` one of `say|check|silent|end|invalid|talked_over|nudge`.
 > - Details: `agent/CLAUDE.md` → "Higgs brain".
 >
 > **Status (Sat 04:20), A:**
@@ -31,7 +47,7 @@
 > - Details in `agent/CLAUDE.md`. **C1 go/no-go: GO** on the primary design.
 > - **Next for A:** Stage 2 (VAD commits, director, floor policy), which needs `ANTHROPIC_API_KEY` in `.env`.
 > - **B: K6 passed** (prep: 8 slides in ~4 s, all planted weaknesses caught; `demo/prepped-analysis.json` written). Details in `server/CLAUDE.md`.
-> - **B: Stage 0 done.** `server/` (FastAPI via uv: `/token`, `GET /api/sessions/{id}` + slide PNGs + scorecard for `demo`) and `web/` (Vite + React + TS + livekit-client) are scaffolded. The `Session` page works against the fake agent at `/session/demo?fake=1`. `demo/deck.pdf` is a generated **placeholder** (`server/scripts/make_placeholder_deck.py`); replace it with the real export.
+> - **B: Stage 0 done.** `server/` (FastAPI via uv: `/token`, `GET /api/sessions/{id}` + slide PNGs + scorecard for `demo`) and `web/` (Vite + React + TS + livekit-client) are scaffolded. The `Session` page works against the fake agent at `/session/demo?fake=1`. `demo/deck.pdf` is a generated **placeholder** (`server/scripts/make_placeholder_deck.py`).
 > - This file is the single source of truth. Update the status line when a checkpoint passes.
 
 ## Context
@@ -51,7 +67,7 @@
   - Add code-switching answers (Indonesian / Mandarin), live web fact-check, a debrief scorecard, and a preset avatar examiner (LiveKit Cloud) with a voice-only fallback.
   - Python code / codebase uploads are cut.
 - **Model:** `higgs-realtime-1.5-preview`, the hackathon preview. It uses the same `wss://api.boson.ai/v1/realtime` endpoint and is documented on the tutorial repo's **`realtime-1.5-preview`** branch. GA `higgs-realtime` stays one env var away (`BOSON_REALTIME_MODEL`).
-- **Greenfield:** the working dir `C:\Users\Lenovo\Documents\!MScAC\Boson Hackathon` is empty.
+- **Greenfield:** the repo started empty on Friday evening.
 
 ## Core design decisions
 1. **"Sees the presentation" means our own slide viewer, not screen vision.** The Realtime docs only show audio and text input.
@@ -89,13 +105,13 @@
    - Default character: demanding but fair. Harsher characters are optional.
    - **Character drives the examiner's behaviour.** How often she interrupts, and for what, comes from the character, not from hard-coded rules. For the final version, tune the characters rather than the code:
 
-     | Field | Controls (agent) | Current values |
+     | Field | Controls (agent) | Friday values (superseded: see "Final state" at the top) |
      |---|---|---|
      | `interrupt_rate` | spacing between interruptions; Q&A patience before replying | low 45 s / 1.6 s · medium 30 s / 1.3 s · high 20 s / 1.0 s |
      | `strictness` | whether **minor** issues can interrupt the talk (the director labels each issue major or minor) | ≥ 5 (The Skeptic): minor too · < 5: major only, minor saved for Q&A |
      | `persona` | tone, phrasing, which questions she favours | free text (presets + custom) |
 
-     The fixed rules for every character: no interruptions in the first 20 s, at most one per slide, fact-checks ≥ 10 s apart, hold the floor 1.5 s. The numbers live in `agent/exam.py`.
+     (Friday plan, superseded.) The fixed rules for every character: no interruptions in the first 20 s, at most one per slide, fact-checks ≥ 10 s apart, hold the floor 1.5 s. The numbers live in `agent/exam.py`.
 6. **Code-switching.** In Q&A the presenter may answer in Indonesian or Mandarin mid-sentence. The examiner follows and continues in the session's language; a character can also be set to examine in Indonesian. Mostly prompt work, checked in K5.
 7. **Live web fact-check.** Declare the server-executed `{"type":"web_search"}` tool. The examiner says "let me check that" and verifies a claim. Skip `executor:"server"` calls in our tool handler, the way the tutorial's `livekit/server_tools.py` does.
 
@@ -157,7 +173,7 @@ We chose it over the LiveKit Agents plugin because manual commits, `response.cre
   - `main.py`: `/token` (livekit-api), `/api/sessions`, `/api/sessions/{id}`, `/api/sessions/{id}/scorecard`.
   - `prep.py`: PyMuPDF render and text, parallel Haiku per-slide analysis, question bank, examiner-instructions assembly.
   - `scorecard.py`
-- `web/`: Vite + React + TS, `livekit-client` and `@livekit/components-react`.
+- `web/`: Vite + React + TS, `livekit-client`.
   - Pages: `Setup`, `Session`, `Scorecard`.
   - Components: `SlideViewer`, `Timer`, `AvatarStage`, `Captions`, `ExaminerState`, `LatencyHud`.
 - `demo/`: `deck.pdf`, an 8-slide internship-style project with planted weaknesses:
@@ -190,24 +206,25 @@ We chose it over the LiveKit Agents plugin because manual commits, `response.cre
   - `{type:"state", state:"listening"|"interjecting"|"holding_floor"|"qa"|"debrief"|"ended"}`
   - `{type:"caption", role:"presenter"|"examiner", text, lang?, t}`
   - `{type:"interjection", slide, reason, t}`
-  - `{type:"reminder", kind:"t_minus_2"|"time_up", acknowledged: true|false|null}`
+  - `{type:"reminder", kind:"t_minus_2"|"time_up", acknowledged: true|false|null}`. `t_minus_2` is the early reminder: T−2, or T−1 for a talk under 5 minutes.
   - `{type:"factcheck", status:"searching"|"done", claim?, sources?}`. `claim` is the presenter's statement being checked, when known.
   - `{type:"latency", metric, ms}`. Measured by the agent; the web side may add its own browser-side metrics.
     - `pause_to_interjection`: local VAD detects the presenter's pause → first examiner audio frame sent to the avatar. Excludes avatar render and network.
     - `cancel_to_silence`: agent decides to cancel (barge-in) → avatar `playback_finished` after `clear_buffer()`. Falls back to `response.done` if there's no playback event.
     - `answer_end_to_reply`: Q&A, presenter's end of speech (VAD) → first examiner audio frame.
+    - `pause_to_interjection_heard`, `answer_end_to_reply_heard`: the same, up to when the room starts hearing her (the avatar's playback start, estimated 1.3 s after her first audio when the avatar doesn't report it).
   - `{type:"ended", session_id}`
 
 **Server API (B builds, A consumes):**
 - `GET /token?room=&identity=` → `{url, token}`.
-- `POST /api/sessions` (multipart: `scenario`, `character` = preset id or `custom_text`, `time_limit_s`, `qa_s`, `notes`, `slides` PDF, optional `support_doc`, optional `avatar` = `true`|`false`, default `true`) → `{session_id, slide_count}`.
+- `POST /api/sessions` (multipart: `scenario`, `character` (a preset id), optional `custom_text` (appended to the preset's persona), `time_limit_s` (60–3600), `qa_s` (0–1800; `0` means no Q&A and no verdict, and `{type:"phase", phase:"qa"}` then ends the exam), `notes`, `slides` PDF, optional `support_doc`, optional `avatar` = `true`|`false`, default `true`) → `{session_id, slide_count}`.
 - `GET /api/sessions/{id}` → **SessionConfig**:
-  - `{session_id, scenario, time_limit_s, qa_s, notes, instructions}`. **`instructions` is optional and ignored by the agent**, which assembles the phase instructions itself (`agent/instructions.py`: `agent/prompts/examiner_base.md` + character + scenario + notes + slide digest + phase rules). The server doesn't need to assemble them.
+  - `{session_id, scenario, time_limit_s, qa_s, notes, instructions}`. **`instructions` is optional.** The agent reads only the supporting-document excerpt from it (the text between `Supporting document (excerpt):` and `Slide digest:`, `support_excerpt()` in `agent/instructions.py`) and assembles the phase instructions itself (`agent/instructions.py`: `agent/prompts/examiner_base.md` + character + scenario + notes + slide digest + phase rules). The server doesn't need to assemble them.
   - `avatar` (optional, default `true`): `false` means voice only. The agent then starts no avatar session and publishes the examiner's voice itself (as with `VIVA_AVATAR=0`).
   - `character: {id, name, persona, voice, avatar_id, interrupt_rate, strictness}`
     - **Custom characters:** `id` stays the preset id. The server appends `custom_text` (or free text sent as `character`, on top of the Supervisor) to the preset's `persona`.
     - The agent uses `persona` as given. It has no per-character prompt files.
-    - `interrupt_rate` (`low|medium|high`) sets the agent's interjection cooldown (45/30/20 s) and its Q&A patience (1.6/1.3/1.0 s).
+    - `interrupt_rate` (`low|medium|high`) sets how long she waits after speaking before raising something new (8/4/3 s) and her Q&A patience (2.5/2.0/1.6 s). `strictness` 5 lets her press a point twice instead of once.
   - `slides: [{index, image_url, summary, claims[], weak_points[], questions[]}]`. The same shape as `demo/prepped-analysis.json` (B's cached prep output, a JSON list of these objects).
 - `POST /api/sessions/{id}/log`: the agent uploads its log at the end, as the **raw request body**. `Content-Type: application/x-ndjson`, one log object per line, exactly the `sample-log.jsonl` format. Response: `{ok: true, lines: N}`.
 - `GET /api/sessions/{id}/scorecard` → **Scorecard**:
@@ -272,6 +289,7 @@ Both sides get fixtures in `demo/`: `session-config.json`, `sample-log.jsonl`, `
 - **✅ C4:** feature freeze at 11:30. Tag `rc`.
 
 ### Stage 5: demo video (Sat 11:30–13:00), 2:30 total
+(Superseded: the video now uses the 3-slide `demo3` session, script in `docs/demo-script-3min.md`.)
 1. **Cold open:** the presenter claims "40% better" and the examiner cuts in at the next breath: "Better than *what*? What's your baseline?"
 2. The problem: every AI is your assistant, and practising a defense needs an examiner.
 3. Setup: scenario, character, upload.
@@ -279,7 +297,7 @@ Both sides get fixtures in `demo/`: `session-config.json`, `sample-log.jsonl`, `
 5. Web fact-check of the dubious statistic.
 6. Q&A: the presenter answers partly in Indonesian and the examiner follows.
 7. The debrief verdict and the scorecard with timestamps.
-8. How it's built: Realtime 1.5 preview (manual turns, server turns, tools, web search), STT, Avatar.
+8. How it's built: two Realtime 1.5 preview sessions (a text-only brain that hears the audio, and the voice), manual turns, server web search, STT, Avatar.
 
 Record with OBS, 2–3 takes, upload publicly.
 - **✅ C5:** the link plays in incognito.
@@ -292,7 +310,7 @@ Record with OBS, 2–3 takes, upload publicly.
   - example inputs/outputs (`demo/`)
   - **known limitations** (e.g. interjections land at pauses, not mid-word; avatar latency; preview model)
 - `.env.example`. Secret scan: `git grep -nE "bai-|sk-ant|LIVEKIT_API_SECRET="`. Tag `submission` and record the SHA.
-- **Form:** track *Put a Face to the Voice*, one-liner, 200-word write-up, 200-word how-built (manual turn control plus director, holding the floor, mode switch, server web search), team + GitHub handles, limitations.
+- **Form:** track *Put a Face to the Voice*, one-liner, 200-word write-up, 200-word how-built (two Higgs Realtime sessions: a text-only brain that hears the audio and decides, and the voice; manual turn control; holding the floor and barge-in; server web search; the avatar), team + GitHub handles, limitations.
 - **✅ C6:** fresh clone on the other laptop → README → it runs. Submitted by 13:50 (deadline 2 PM).
 
 **15:00 group round (peers vote) and 17:00 finals (judges):**

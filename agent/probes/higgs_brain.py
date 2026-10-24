@@ -5,7 +5,7 @@ audio directly and, after each chunk, answers with one line: SILENT, SAY: <line>
 The same chunks' transcripts go to the Haiku director for comparison. A synthetic presenter makes
 correct statements, filler, and deliberate errors (some on the slides, some not).
 
-    cd agent && uv run probes/higgs_brain.py [runs] [--prompt old|live] [--stt on|off] [--notes every|change] [--no-haiku]
+    cd agent && uv run probes/higgs_brain.py [runs] [--prompt old|live] [--stt on|off] [--notes every|change] [--no-haiku] [--prompt-file <path>]
 
 --prompt live uses the agent's own brain instructions (instructions.brain); --stt off and --notes change
 match the live brain session (no transcription; a slide note only when the slide changes).
