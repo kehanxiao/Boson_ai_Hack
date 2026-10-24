@@ -116,7 +116,10 @@ After an exam, the agent stays in the room and waits for the next **Start**. Pre
 - Design notes and measured results for each part: `agent/CLAUDE.md`, `server/CLAUDE.md`, `web/CLAUDE.md`.
 
 ## Known limitations
-- **Interruptions land at pauses, not mid-sentence.** The examiner cuts in at your next breath: VAD pause (0.6 s) + brain decision (~0.45–0.6 s) + first audio (~0.45 s), plus the avatar rendering. Measured in the headless sim: ~2.1–2.9 s from the pause to her first audio.
+- **Interruptions land at pauses, not mid-sentence.** The examiner cuts in at your next breath: the VAD waits for 0.6 s of silence, the brain decides (~0.45 s), and the voice starts (~0.35 s, with the brain on its own API key).
+  - **The avatar adds ~1.4 s more** before you hear her (rendering and transport); voice-only (`VIVA_AVATAR=0`) adds ~0.1–0.2 s.
+  - Measured through LiveKit with a synthetic presenter (`agent/probes/live_room.py`): the end of your speech → her voice is ~1.4 s voice-only and ~2.8 s with the avatar.
+  - With a single API key, the voice waits 0.8 s after each brain decision. Two sessions on one key delay each other's responses.
 - **Spacing, by design.** After she has spoken she waits 3–8 s (by character) before cutting in on something new, unless you are replying to her. A claim made in that window is judged when it ends. She presses a dodged question once (twice for The Skeptic), then keeps it for Q&A.
 - **The brain is a judgment call.** It is more willing to interrupt than a rules engine. In tests its "unscripted" interruptions were mostly fair (a contradiction with something said a minute earlier, an unlabelled chart). Occasionally it misattributes a point she raised to the presenter.
 - **The preview model's own turn-taking can't be switched on mid-session** (`turn_detection` is fixed at session start). Q&A therefore also runs on our manual turns: end-of-turn and barge-in come from our VAD and policy, not Higgs's built-in VAD.

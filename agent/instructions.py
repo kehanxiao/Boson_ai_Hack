@@ -60,6 +60,21 @@ END: <her words>  (when she has asked enough, about three or four questions, or 
 For example: "SILENT", or "SAY: Fair enough. So what happens with an empty file?", or "END: Okay, noted. That's all my questions." Never explain your choice.""",
 }
 
+SUPPORT_HEADER = "Supporting document (excerpt):\n"  # as server/instructions.py writes it
+
+
+def support_excerpt(config: dict) -> str:
+    """The optional supporting document (a report, the assignment brief) the presenter uploaded. The server puts
+    it only inside SessionConfig.instructions, which the agent otherwise ignores, so it is read from there."""
+    text = config.get("instructions") or ""
+    start = text.find(SUPPORT_HEADER)
+    if start < 0:
+        return ""
+    body = text[start + len(SUPPORT_HEADER):]
+    end = body.find("\n\nSlide digest:")
+    return (body[:end] if end >= 0 else body).strip()
+
+
 def slide_line(slide: dict) -> str:
     line = f"Slide {slide['index']}: {slide.get('summary', '')}"
     if slide.get("weak_points"):
@@ -83,6 +98,8 @@ def core(config: dict) -> str:
     ]
     if config.get("notes"):
         parts.append(f"The organiser asked you to focus on: {config['notes']}")
+    if support_excerpt(config):
+        parts.append("The presenter's supporting document (excerpt):\n" + support_excerpt(config))
     parts.append("What you know about the slides:\n" + slide_digest(config))
     return "\n\n".join(parts)
 
@@ -125,6 +142,9 @@ def brain(config: dict, phase: str) -> str:
     ]
     if config.get("notes"):
         parts.append(f"The organiser asked her to focus on: {config['notes']}")
+    if support_excerpt(config):
+        # A claim in the talk that contradicts the presenter's own document is worth a cut-in.
+        parts.append("The presenter's supporting document, which she has read (excerpt):\n" + support_excerpt(config))
     if phase == "presentation":
         # One slide at a time, as it is shown: knowing every slide's weak points from the start, the brain raised
         # claims from later slides before the presenter had made them ("You said bug-free..." on slide 5).

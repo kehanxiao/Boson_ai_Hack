@@ -12,6 +12,16 @@
 > - **Unchanged for B:** `viva.ui` / `viva.ctl` and the log format. The log's `director` lines now come from the brain (`action` is `say|check|silent|end|talked_over`).
 > - Details: `agent/CLAUDE.md` → "Higgs brain".
 >
+> **Status (Sat 04:20), A:**
+> - **C2 passed.** Live GradeBook runs with the avatar: interjections, reminder → escalation / acknowledgement, Q&A and verdict, and the log uploads for the scorecard. Tag `mvp`.
+> - **C3 passed (headless).** An unseen session created through `/api/sessions` (fresh prep, The Skeptic plus a custom brief, a supporting document) ran end to end: all sim checks, log upload and a generated scorecard (`agent/probes/c3_session.py`, `exam_sim.py gradebook --session <id>`). Tag `v1`.
+>   - The examiner now also reads the supporting document. She quoted the brief: "the brief also requires … five timed runs".
+> - **C4, partly:**
+>   - Pause → interjection is ~0.8 s at the agent; cancel → silence is 0–15 ms.
+>   - The voice-only fallback passes a full live run through LiveKit (`agent/probes/live_room.py`).
+>   - The avatar adds ~1.4 s before the presenter hears her.
+>   - `rc` is tagged at the feature freeze.
+>
 > **Status (Fri 21:55):**
 > - **A: C0 passed.** Avatar + `higgs-realtime-1.5-preview` working.
 > - **K1–K4 passed (headless)**, and K5 is done:

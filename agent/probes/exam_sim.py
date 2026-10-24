@@ -7,7 +7,10 @@ ignores the time reminder.
 
 Times are shortened: 140 s presentation, reminder at 95 s, 60 s of Q&A.
 
-    cd agent && uv run probes/exam_sim.py [demo|gradebook]
+    cd agent && uv run probes/exam_sim.py [demo|gradebook] [--session <id>]
+
+--session runs the script on a session created through the server (probes/c3_session.py: fresh prep, custom
+character, supporting document), then uploads the log and prints the scorecard the server generates (C3).
 """
 
 import asyncio
@@ -15,6 +18,8 @@ import json
 import logging
 import os
 import pathlib
+
+import requests
 import sys
 import time
 
@@ -33,6 +38,7 @@ from ui import PrintUI  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 RATE, FRAME = 24_000, 480  # 20 ms frames
+SERVER = os.environ.get("VIVA_SERVER_URL", "http://localhost:8000")
 T0 = time.monotonic()
 
 # ERwait (demo/session-config.json). SCRIPT_A: (slide, text, wait for the examiner first)
@@ -188,9 +194,14 @@ async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     for noisy in ("livekit", "httpx", "anthropic"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
-    name = sys.argv[1] if len(sys.argv) > 1 else "demo"
+    args = [a for a in sys.argv[1:]]
+    session_id = args[args.index("--session") + 1] if "--session" in args else None
+    name = next((a for a in args if a in DECKS), "demo")
     deck = DECKS[name]
-    config = json.loads((ROOT / "demo" / deck["config"]).read_text(encoding="utf-8"))
+    if session_id:
+        config = requests.get(f"{SERVER}/api/sessions/{session_id}", timeout=10).json()
+    else:
+        config = json.loads((ROOT / "demo" / deck["config"]).read_text(encoding="utf-8"))
     config.update({"time_limit_s": deck.get("time_limit_s", 140), "qa_s": 60})
     log_path = pathlib.Path(__file__).resolve().parent / ".cache" / f"exam-sim-{name}.jsonl"
     slog = SessionLog(log_path)
@@ -226,6 +237,24 @@ async def main() -> None:
     await realtime.close()
     await brain.close()
     report(log_path, name)
+    if session_id:
+        scorecard(slog, session_id)
+
+
+def scorecard(slog: SessionLog, session_id: str) -> None:
+    slog.upload(SERVER, session_id)
+    r = requests.get(f"{SERVER}/api/sessions/{session_id}/scorecard", timeout=120)
+    print(f"\n=== SCORECARD ({r.status_code}) ===")
+    if not r.ok:
+        print(r.text[:300])
+        return
+    card = r.json()
+    print("verdict:", card.get("verdict", "")[:200])
+    for c in card.get("criteria", []):
+        print(f"  {c.get('name')}: {c.get('score_1_5')}/5")
+    moments = card.get("moments", [])
+    print(f"moments: {len(moments)} ({', '.join(sorted({m.get('kind', '') for m in moments}))}); "
+          f"improvements: {len(card.get('improvements', []))}")
 
 
 def report(path: pathlib.Path, name: str) -> None:

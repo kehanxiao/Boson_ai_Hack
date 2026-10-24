@@ -133,6 +133,16 @@ Stack: uv, Python 3.12, `livekit-agents` 1.8.8 (for `DataStreamAudioOutput`), `l
   - **It is per key.** With the brain on its own key (`BOSON_BRAIN_API_KEY`), the voice's first audio is ~0.35 s even when asked right after the brain's `response.done` (4 rounds), so `say()` waits only when both share a key. Pause → first audio ≈ 0.45 s brain + 0.35 s voice, plus the avatar.
 - **One session can't be both brain and voice:** a per-response `output_modalities: ["text"]` is ignored (the decision came back as audio), and switching the session to text mid-session returned no text (`probes/single_session.py`).
 
+## Checks against the plan (Sat 04:00–04:20)
+- **C3, headless:** `probes/c3_session.py` creates a session through the server, as the Setup page does: the GradeBook deck, fresh prep in 8.2 s, The Skeptic plus a custom brief, a supporting document.
+  - `probes/exam_sim.py gradebook --session <id>` then runs the exam on that config, uploads the log and prints the server's scorecard.
+  - Result: all sim checks pass, and the log uploads (HTTP 200). The scorecard came back with a verdict, 4 criteria, 6 moments (strong, weak, unacknowledged) and 3 improvements.
+- **Supporting document:** the server puts the excerpt only inside `SessionConfig.instructions`, which the agent ignores. `instructions.support_excerpt()` reads it from there into both sessions' prompts (no contract change).
+- **Live through LiveKit, headless:** `probes/live_room.py <session_id>` joins as the presenter with a TTS microphone, sends `viva.ctl`, and checks `viva.ui` and the examiner's audio. Voice-only and avatar both pass all 7 checks.
+- ⚠️ **The avatar adds ~1.4 s** (1.36–1.66 s) from the agent's first audio to sound in the room. Voice-only adds ~0.1–0.2 s.
+  - The end of the presenter's speech → her voice: ~1.4 s voice-only, ~2.8 s with the avatar.
+  - For measuring this, the probe's `AudioSource` needs a small `queue_size_ms`. With the default 1 s queue, `capture_frame` returns ~1 s before the audio is sent.
+
 ## UI events
 Publish `viva.ui` messages exactly as specified in `PLAN.md` → "Interfaces between A and B", via `room.local_participant.send_text(json, topic="viva.ui")`. Listen for `viva.ctl` with a text stream handler (pattern in `docs/vendor/higgs-realtime-tutorial/livekit/probe.py`).
 
