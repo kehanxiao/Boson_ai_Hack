@@ -62,6 +62,12 @@ def content_words(text: str) -> int:
     return len(words) + cjk // 2
 
 
+def question_part(text: str) -> str:
+    """The sentences of an utterance that are questions ("Going back to slide 3: Better than what?")."""
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    return " ".join(s for s in sentences if s.endswith("?"))
+
+
 def interrupts_on_minor(character: dict) -> bool:
     """Only the strictest characters (strictness 5, e.g. The Skeptic) cut in for minor issues too."""
     return int(character.get("strictness", 3)) >= 5
@@ -492,8 +498,11 @@ class ExamController:
             self.awaiting.update(since=now, answer=[])  # same question, asked again
             return
         text = self.last_examiner_text
-        self.awaiting = {"since": now, "asked": text, "answer": [], "index": len(self.interjections) - 1,
-                         "insists": 0, "is_question": "?" in text}
+        question = question_part(text)
+        # Only a real interruption asks something she can insist on. A fact-check correction may end in "?",
+        # but carrying "The search confirms ..." into Q&A as an unanswered question made no sense (sim).
+        self.awaiting = {"since": now, "asked": question or text, "answer": [], "index": len(self.interjections) - 1,
+                         "insists": 0, "is_question": kind == "interjection" and bool(question)}
 
     def _allowed(self, slide: int) -> tuple[bool, bool]:
         """(interjection allowed, fact-check allowed) right now, by cooldowns and caps."""
