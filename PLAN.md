@@ -8,6 +8,7 @@
 >   - Web search fact-checking works but needs prompt tuning.
 > - Details in `agent/CLAUDE.md`. **C1 go/no-go: GO** on the primary design.
 > - **Next for A:** Stage 2 (VAD commits, director, floor policy), which needs `ANTHROPIC_API_KEY` in `.env`.
+> - **B: K6 passed** (prep: 8 slides in ~4 s, all planted weaknesses caught; `demo/prepped-analysis.json` written). Details in `server/CLAUDE.md`.
 > - **B: Stage 0 done.** `server/` (FastAPI via uv: `/token`, `GET /api/sessions/{id}` + slide PNGs + scorecard for `demo`) and `web/` (Vite + React + TS + livekit-client) are scaffolded. The `Session` page works against the fake agent at `/session/demo?fake=1`. `demo/deck.pdf` is a generated **placeholder** (`server/scripts/make_placeholder_deck.py`); replace it with the real export.
 > - This file is the single source of truth. Update the status line when a checkpoint passes.
 

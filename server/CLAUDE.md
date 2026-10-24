@@ -26,3 +26,11 @@ Stack: uv, Python 3.11+, `fastapi`, `uvicorn`, `python-multipart`, `livekit-api`
 - **Input:** the JSONL session log (format in `PLAN.md`) plus the slide analysis.
 - **Output:** structured JSON matching `demo/sample-scorecard.json`.
 - Every quote must come verbatim from the log. Moments carry `t` (seconds from start) and `slide`.
+
+## K6 results (Fri 22:30, `prep.py`)
+- **Pass.** 8 demo slides analysed in parallel in **2.9–7.5 s** (target < 60 s), 0 failures. Every planted weakness is caught: no baseline (3), leakage + unexplained outliers (4), LightGBM is Microsoft's (5), too dense (6), Ontario overclaim (7). The title slide gets no weak points.
+- **Haiku 5.5 takes images** (Models API: `capabilities.image_input.supported = true`; in SDK 2.3 `capabilities` is a typed object, so use attribute access). `--text-only` also works (3.4 s).
+- **Settings:** `messages.parse(output_format=SlideAnalysis)`, `thinking: adaptive`, `effort: low`, `max_tokens` 4096 (thinking counts toward it). Thinking disabled was about as good and slightly faster; adaptive reasoned a bit more carefully about leakage.
+- **Density is flagged in code, not left to the model.** Haiku flagged the crammed slide only about 1 run in 2. Slides with more than `DENSE_LINES` (9) extracted lines now get a "Layout check" line in the prompt, which made it 3/3.
+- Each prompt carries a whole-deck text outline, so cross-slide issues are caught (e.g. a slide-4 feature that leaks the slide-2 target).
+- `demo/prepped-analysis.json` = the cached output, in `SessionConfig.slides` shape.

@@ -1,0 +1,134 @@
+[
+  {
+    "index": 1,
+    "image_url": "/api/sessions/demo/slides/1.png",
+    "summary": "Title slide introducing ERwait, a forecasting project for ER wait times, presented as an MScAC internship by Alex Chen.",
+    "claims": [],
+    "weak_points": [],
+    "questions": [
+      "What is the main question this project answers for hospital operations?",
+      "Why is the hospital network described as fictional, and what data does this rely on?"
+    ]
+  },
+  {
+    "index": 2,
+    "image_url": "/api/sessions/demo/slides/2.png",
+    "summary": "The slide motivates the project: ER waits are long and unpredictable, about 1 in 20 patients leave unseen, so the goal is a per-hospital 4-hour wait forecast.",
+    "claims": [
+      "Emergency room waits are long and unpredictable",
+      "About 1 in 20 patients leave without being seen",
+      "The goal is to forecast the next 4 hours of wait time per hospital"
+    ],
+    "weak_points": [
+      "The '~1 in 20' figure has no source, time period or hospital scope, so the audience cannot check how large the problem is."
+    ],
+    "questions": [
+      "Where does the 1 in 20 left-without-being-seen figure come from, and over what period?",
+      "How is 'long and unpredictable' measured, and what counts as a long wait?"
+    ]
+  },
+  {
+    "index": 3,
+    "image_url": "/api/sessions/demo/slides/3.png",
+    "summary": "The slide asserts that the authors' model is 40% better than an unnamed baseline, shown by an unlabeled two-bar chart with no axes or values.",
+    "claims": [
+      "Our model is 40% better."
+    ],
+    "weak_points": [
+      "The 40% figure has no stated baseline, metric, or test set, and the bar chart has no axis, labels, or values to verify it."
+    ],
+    "questions": [
+      "Better than which baseline model, measured by what metric, on which held-out data?",
+      "What are the actual error values behind the 40% improvement, and is the difference statistically significant?"
+    ]
+  },
+  {
+    "index": 4,
+    "image_url": "/api/sessions/demo/slides/4.png",
+    "summary": "The slide describes the dataset: two years of triage records with 1.2M visits, the features used, and an outlier-removal step.",
+    "claims": [
+      "The dataset contains 2 years of triage records covering 1.2M visits.",
+      "Features include arrival time, triage level and time to first physician.",
+      "Outliers were removed from the data."
+    ],
+    "weak_points": [
+      "Time to first physician is recorded after arrival and is closely tied to the wait being forecast, so using it as a feature risks target leakage.",
+      "Outlier removal is unexplained: no definition, threshold or count is given, and dropping extreme waits could remove the very long waits the model must predict."
+    ],
+    "questions": [
+      "Is time to first physician known at the forecast time, or is it only recorded after the wait ends?",
+      "How did you define outliers, and how many of the 1.2M visits did removing them drop?"
+    ]
+  },
+  {
+    "index": 5,
+    "image_url": "/api/sessions/demo/slides/5.png",
+    "summary": "The slide lists the modelling method: gradient-boosted trees implemented with LightGBM, validated with rolling-window validation.",
+    "claims": [
+      "The model uses gradient-boosted trees.",
+      "LightGBM was released by Google in 2020.",
+      "Rolling-window validation is used to evaluate the model."
+    ],
+    "weak_points": [
+      "The LightGBM attribution is wrong: it was developed and released by Microsoft (open-sourced around 2016-2017), not by Google in 2020."
+    ],
+    "questions": [
+      "Who developed LightGBM, and when was it first released?",
+      "What window sizes did rolling-window validation use, and how were test periods separated from training?",
+      "Why was gradient-boosted trees chosen over simpler baselines for this forecast?"
+    ]
+  },
+  {
+    "index": 6,
+    "image_url": "/api/sessions/demo/slides/6.png",
+    "summary": "The slide lists the engineered features used to forecast emergency room wait times, spanning lagged waits, arrivals, calendar, weather, staffing and hospital-capacity signals.",
+    "claims": [
+      "Lagged wait times at 1h, 2h, 4h, 24h and 168h are informative predictors of future waits.",
+      "Staffing levels and triage mix per hour are included as predictors of wait times.",
+      "Time to first physician is a feature available for forecasting."
+    ],
+    "weak_points": [
+      "Sixteen lines of text at small size is too dense to present; the speaker should name the few features that matter most.",
+      "Time to first physician is measured during the visit and likely occurs after the wait being predicted, so it could leak the target.",
+      "Ambulance offload delays, admitted-no-bed counts and triage mix are only known at or after forecast time, so their availability at prediction time is unclear."
+    ],
+    "questions": [
+      "Which three features contribute most to forecast accuracy, and by how much?",
+      "Is time to first physician known at the moment the forecast is made?",
+      "Are all features available in real time when the 4-hour forecast is issued?"
+    ]
+  },
+  {
+    "index": 7,
+    "image_url": "/api/sessions/demo/slides/7.png",
+    "summary": "The slide claims the forecasting system is ready for deployment across all Ontario hospitals.",
+    "claims": [
+      "The system is ready for deployment across all Ontario hospitals."
+    ],
+    "weak_points": [
+      "Readiness across all Ontario hospitals is asserted with no evidence, such as multi-site validation, deployment trials, or integration testing, and the deck only describes a fictional Toronto hospital network.",
+      "Ontario has many hospitals with differing triage practices, staffing and data systems, so the claim generalises far beyond the single-network data used for training."
+    ],
+    "questions": [
+      "What evidence shows the model works at hospitals other than the Toronto network used for training?",
+      "Does the 40% headline result hold outside the single Toronto network, and against what baseline?",
+      "What integration, privacy approval and data-feed work remains before any Ontario hospital could use it?"
+    ]
+  },
+  {
+    "index": 8,
+    "image_url": "/api/sessions/demo/slides/8.png",
+    "summary": "The closing slide lists the 4-hour-ahead per-hospital wait forecasts as the contribution, calls the result strong, and proposes adding real-time bed data.",
+    "claims": [
+      "The project delivers 4-hour-ahead wait forecasts per hospital.",
+      "The headline result is strong."
+    ],
+    "weak_points": [
+      "'Strong headline result' is asserted without restating any metric, baseline, or the 40% figure from slide 3, so the conclusion is unsupported on this slide."
+    ],
+    "questions": [
+      "What exactly is the headline metric, and what baseline is the 40% improvement measured against?",
+      "Why is real-time bed data the most important missing input for the next version?"
+    ]
+  }
+]
