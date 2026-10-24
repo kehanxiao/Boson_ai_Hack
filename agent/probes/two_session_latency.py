@@ -12,6 +12,7 @@ What in the brain session holds the voice up? response.create on the voice, then
 import asyncio
 import base64
 import json
+import os
 import pathlib
 import statistics
 import sys
@@ -69,8 +70,11 @@ async def main() -> None:
     rounds = int(sys.argv[1]) if len(sys.argv) > 1 else 2
     cases = [a for a in sys.argv[2:]] or list(CASES)
     results: dict[str, list[float]] = {c: [] for c in cases}
+    brain_key = os.environ.get("BOSON_BRAIN_API_KEY")
+    brain_auth = {"Authorization": f"Bearer {brain_key}"} if brain_key else AUTH
+    print("brain key:", "BOSON_BRAIN_API_KEY" if brain_key else "same as the voice")
     async with websockets.connect(REALTIME_URL, additional_headers=AUTH, max_size=None) as ws, \
-            websockets.connect(REALTIME_URL, additional_headers=AUTH, max_size=None) as ws2:
+            websockets.connect(REALTIME_URL, additional_headers=brain_auth, max_size=None) as ws2:
         voice, brain = Probe(ws), Probe(ws2)
         tasks = [asyncio.create_task(voice.receive()), asyncio.create_task(brain.receive())]
         await voice.send({"type": "session.update", "session": realtime_session(CONFIG)})

@@ -117,7 +117,7 @@ After an exam, the agent stays in the room and waits for the next **Start**. Pre
 
 ## Known limitations
 - **Interruptions land at pauses, not mid-sentence.** The examiner cuts in at your next breath: VAD pause (0.6 s) + brain decision (~0.45–0.6 s) + first audio (~0.45 s), plus the avatar rendering. Measured in the headless sim: ~2.1–2.9 s from the pause to her first audio.
-- **Spacing, by design.** After she has spoken she waits 5–15 s (by character) before cutting in on something new, unless you are replying to her. Within that window a new weak claim waits. The brain still remembers it and can come back to it.
+- **Spacing, by design.** After she has spoken she waits 3–8 s (by character) before cutting in on something new, unless you are replying to her. A claim made in that window is judged when it ends. She presses a dodged question once (twice for The Skeptic), then keeps it for Q&A.
 - **The brain is a judgment call.** It is more willing to interrupt than a rules engine. In tests its "unscripted" interruptions were mostly fair (a contradiction with something said a minute earlier, an unlabelled chart). Occasionally it misattributes a point she raised to the presenter.
 - **The preview model's own turn-taking can't be switched on mid-session** (`turn_detection` is fixed at session start). Q&A therefore also runs on our manual turns: end-of-turn and barge-in come from our VAD and policy, not Higgs's built-in VAD.
 - **Speech-to-text:** short Indonesian phrases transcribe unreliably, so treat captions and scorecard quotes in Indonesian as approximate. STT occasionally invents a sentence from silence, and it can split a sentence at a breath (e.g. losing "percent better").

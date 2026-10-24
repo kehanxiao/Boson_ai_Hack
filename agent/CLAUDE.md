@@ -10,10 +10,17 @@ A hand-built worker: joins the LiveKit room, starts a Higgs Avatar session, and 
 - `main.py`: live entry point (`uv run main.py [session_id]`, `VIVA_AVATAR=0` for voice-only, `VIVA_FACTCHECK=0`). Joins the room, starts the avatar (429 retry), loads SessionConfig from the server (falls back to `demo/` for `demo` and `gradebook`), connects both sessions, forwards presenter audio, handles `viva.ctl`, releases the avatar with retries, uploads the log.
 - `brain.py`: the brain session. When asked, it answers one line: `SILENT`, `SAY: <words>`, `CHECK: <claim>`, or (Q&A) `END: <words>`. It gets the same audio and commits as the voice, plus `[bracketed]` notes: the slide, what she said that it didn't write (greeting, reminders, search results), and being talked over.
 - `exam.py`: `ExamController`, the exam logic around the brain. The rules it keeps:
-  - **When the brain is asked:** at each presenter pause, except while she speaks, and for `GAP_S` (8 s for medium) after she has spoken. The exception is an exchange: after she cuts in, every pause for 20 s is a reply, up to `follow_ups` replies (by strictness). Q&A: at each pause after the patience delay, or after 8 s of silence.
+  - **When the brain is asked:** at each presenter pause, except while she speaks, and for `GAP_S` (4 s for medium) after she has spoken. A pause inside the gap is judged when the gap ends.
+    - The exception is an exchange: after she cuts in, the presenter's next pauses for 20 s are a reply, judged after an extra `REPLY_PATIENCE_S` (0.9 s) of silence.
+    - An exchange allows up to `follow_ups` replies: 1, or 2 for strictness 5. Then the brain is told to let the point go until Q&A.
+    - Q&A: at each pause after the patience delay, or after 8 s of silence. At least `MIN_QA_QUESTIONS` (2) before END.
+  - **The brain learns each slide when it is shown** (summary and weak points in the slide note). It sees the full digest only in Q&A. Knowing every slide up front, it raised later slides' claims early.
+  - **Never the same line twice** (`said`), and a cut-off line counts toward the follow-ups.
   - **Holding the floor:** 1.5 s. Reminder → acknowledgement (phrase / silence / jump to the last slide) → one escalation.
-  - **Talked over** (both phases): her brain lines and Q&A questions stop 0.8 s past the hold window (cancel + clear + truncate), and the brain is told what the presenter heard. Reminders, fact-checks and the verdict hold the floor.
-  - **Q&A time-up:** the exchange under way may finish (25 s grace), then the brain ENDs and writes the verdict.
+  - **Talked over:** her brain lines and Q&A questions stop when the presenter keeps talking past the hold window (cancel + clear + truncate). The brain is told what the presenter heard. Reminders, fact-checks and the verdict hold the floor.
+    - Q&A: 0.8 s past the hold.
+    - Presentation: 2.5 s past the hold, in one unbroken stretch, because she was the one who cut in. At 0.8 s, the presenter finishing their sentence cut every interjection after a word or two.
+  - **Q&A time-up:** the exchange under way may finish (25 s grace), then the brain ENDs and the voice gives the verdict.
   - It tracks every utterance from request to finished playing, including the server's own follow-up after a web search.
 - `realtime.py`: WS client for both sessions (`name` for logs). Queues commits during a response, refuses `response.create` while busy or while a server tool is pending. One-line logging, no base64.
 - `director.py` + `prompts/director.md`: the former Haiku director, now only used by `probes/higgs_brain.py` for comparison.
@@ -118,11 +125,13 @@ Stack: uv, Python 3.12, `livekit-agents` 1.8.8 (for `DataStreamAudioOutput`), `l
 - **It prefers correcting from memory over CHECK** ("sorted uses Timsort, not quicksort"). The prompt asks for CHECK on outside-world facts, so the presenter sees the evidence.
 - **Verdict:** asked with its own instructions (`brain(config, "verdict")`, `SAY: Verdict: …`). With the Q&A instructions it answered SILENT.
 - **Voice responses can fail upstream** (`response.done status=failed`, "an upstream service call did not complete"). This happened about once per sim. Our requests are retried once.
-- ⚠️ **Two sessions on one key slow each other down.** A voice `response.create` sent within ~1 s of a brain `response.done` takes ~1.6–1.8 s to its first audio; 0.8 s later it takes ~0.36 s (`probes/two_session_latency.py`, 5 rounds).
+- ⚠️ **A response asked for right after another response starts late.** A voice `response.create` sent within ~1 s of a brain `response.done` takes ~1.6–1.8 s to its first audio; 0.8 s later it takes ~0.36 s (`probes/two_session_latency.py`, 5 rounds).
   - The cause is not the voice's own commit (`probes/voice_latency.py`) and not the brain's commit.
   - Cancelling the brain's response doesn't help.
+  - **Within one session it happens too:** a spoken response right after a text response and a `session.update` took ~1.65 s (`probes/single_session.py`). So it may be server-side after any response, not "two sessions on one key".
   - `say()` therefore waits until 0.8 s after the brain's last response (`BRAIN_SETTLE_S`), which is faster overall.
-  - A brain on a separate API key might avoid it (untested).
+  - A brain on a separate key (`BOSON_BRAIN_API_KEY`) would tell whether it is per key (untested).
+- **One session can't be both brain and voice:** a per-response `output_modalities: ["text"]` is ignored (the decision came back as audio), and switching the session to text mid-session returned no text (`probes/single_session.py`).
 
 ## UI events
 Publish `viva.ui` messages exactly as specified in `PLAN.md` → "Interfaces between A and B", via `room.local_participant.send_text(json, topic="viva.ui")`. Listen for `viva.ctl` with a text stream handler (pattern in `docs/vendor/higgs-realtime-tutorial/livekit/probe.py`).

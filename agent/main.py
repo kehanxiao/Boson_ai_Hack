@@ -40,6 +40,7 @@ MAX_DURATION_S = 3600  # the account limit: the avatar leaves after this, so res
 DUPLICATE_START_S = 10  # a start this soon after the exam began is the web's retransmission
 
 BOSON_KEY = os.environ["BOSON_API_KEY"]
+BRAIN_KEY = os.environ.get("BOSON_BRAIN_API_KEY") or BOSON_KEY  # a second key may avoid cross-session delays
 BOSON_BASE = os.environ.get("BOSON_BASE_URL", "https://api.boson.ai/v1")
 BOSON_AUTH = {"Authorization": f"Bearer {BOSON_KEY}"}
 REALTIME_URL = os.environ.get("BOSON_REALTIME_URL", "wss://api.boson.ai/v1/realtime")
@@ -189,7 +190,7 @@ async def run(session_id: str) -> None:
                 await current.on_brain_closed()
 
         realtime = RealtimeClient(REALTIME_URL, BOSON_KEY, on_event)
-        brain = Brain(REALTIME_URL, BOSON_KEY, on_decision, on_brain_closed)
+        brain = Brain(REALTIME_URL, BRAIN_KEY, on_decision, on_brain_closed)
 
         def new_exam() -> ExamController:
             slog = SessionLog(HERE / "runs" / f"{room_name}-{time.strftime('%Y%m%d-%H%M%S')}.jsonl")

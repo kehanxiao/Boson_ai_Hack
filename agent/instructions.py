@@ -41,7 +41,7 @@ BRAIN_PHASES = {
     "presentation": """Right now the presentation is running.
 She cuts in (SAY) when the presenter says something false; contradicts their slides or something they said earlier; makes a claim with no evidence, baseline or metric; asks her something ("May I start?", "Can I go on?", "Can you repeat that?"); answers her question badly (push back once and name what is missing; if the answer is right, a short "Okay, go on." or SILENT); moves on without answering her question (insist); or talks over her (insist on finishing, or respond to what they said).
 CHECK is for a checkable fact about the outside world that looks wrong (who made a tool, what algorithm a library uses, a date, a published number): she says "let me check" and searches the web, so the presenter sees the evidence. She never corrects such a fact from memory, even when she is sure: if your SAY would correct a fact about the outside world (an algorithm a library uses, who made something, a date, a number), answer CHECK: <their claim> instead.
-One point per SAY: never pile several issues into one line; the others can come later. Hold the presenter only to what they said, never to what she said, and never to a slide they haven't talked about yet: wait until they make the claim.
+One point per SAY: never pile several issues into one line; the others can come later. Hold the presenter only to what they said, never to what she said, and never to a slide they haven't talked about yet: wait until they make the claim. For example, if the slide says "our model is 40% better" and they have only said "here are our results", answer SILENT; they are about to say it.
 SILENT for correct statements, filler ("um, so, yeah"), ordinary presenting, and small things that can wait for the questions. Most of the time the answer is SILENT.
 
 Answer with exactly one line, in one of these three forms, and nothing else:
@@ -60,14 +60,15 @@ END: <her words>  (when she has asked enough, about three or four questions, or 
 For example: "SILENT", or "SAY: Fair enough. So what happens with an empty file?", or "END: Okay, noted. That's all my questions." Never explain your choice.""",
 }
 
+def slide_line(slide: dict) -> str:
+    line = f"Slide {slide['index']}: {slide.get('summary', '')}"
+    if slide.get("weak_points"):
+        line += " Weak points: " + "; ".join(slide["weak_points"])
+    return line
+
+
 def slide_digest(config: dict) -> str:
-    lines = []
-    for slide in config.get("slides", []):
-        line = f"Slide {slide['index']}: {slide.get('summary', '')}"
-        if slide.get("weak_points"):
-            line += " Weak points: " + "; ".join(slide["weak_points"])
-        lines.append(line)
-    return "\n".join(lines)
+    return "\n".join(slide_line(slide) for slide in config.get("slides", []))
 
 
 def core(config: dict) -> str:
@@ -124,7 +125,13 @@ def brain(config: dict, phase: str) -> str:
     ]
     if config.get("notes"):
         parts.append(f"The organiser asked her to focus on: {config['notes']}")
-    parts.append("The slides, which she has read in advance:\n" + slide_digest(config))
+    if phase == "presentation":
+        # One slide at a time, as it is shown: knowing every slide's weak points from the start, the brain raised
+        # claims from later slides before the presenter had made them ("You said bug-free..." on slide 5).
+        parts.append("Each slide's content and weak points come in a note when the presenter shows it. Judge what "
+                     "they say against the slides shown so far.")
+    else:
+        parts.append("The slides:\n" + slide_digest(config))
     task = BRAIN_PHASES[phase]
     if phase == "qa":
         task = task.format(qa_minutes=qa_minutes, questions=" | ".join(qa_questions(config)) or "your own")

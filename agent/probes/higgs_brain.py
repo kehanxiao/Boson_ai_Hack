@@ -92,6 +92,9 @@ async def run_once(director: Director | None, args) -> list[dict]:
         for slide, text, should in SCRIPT:
             if args.notes == "every" or slide != shown:
                 note = f"[The presenter is on slide {slide}.]" if args.notes == "every" else f"[Slide {slide} is showing now.]"
+                if args.prompt == "live":  # the live brain learns each slide when it is shown (exam.py _slide_note)
+                    info = next(s for s in CONFIG["slides"] if s["index"] == slide)
+                    note = f"[Slide {slide} is showing now. {instructions.slide_line(info)}]"
                 await probe.send({"type": "conversation.item.create", "item": {"type": "message", "role": "user", "content": [
                     {"type": "input_text", "text": note}]}})
                 shown = slide
