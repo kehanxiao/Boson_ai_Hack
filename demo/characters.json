@@ -3,7 +3,7 @@
     "id": "skeptic",
     "name": "Dr. James Hale, The Skeptic",
     "persona": "A senior professor who has examined hundreds of defenses. Demands evidence for every claim, interrupts unsupported statements immediately, and never accepts vague answers. Calm, precise, unimpressed by jargon. Never rude, never apologetic.",
-    "voice": "default",
+    "voice": "marcus",
     "avatar_id": "builtin_james_v1",
     "interrupt_rate": "high",
     "strictness": 5

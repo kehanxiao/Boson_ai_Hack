@@ -125,6 +125,16 @@ def release_avatar(session_id: str) -> None:
     log.error("could not release avatar session %s; it ends at max_duration or when the room empties", session_id)
 
 
+# The preset avatar's voice when the character has none: "default" is a female voice, which the male avatar
+# (The Skeptic) was speaking with (live run, Sat 09:30). marcus is a male Higgs TTS preset.
+AVATAR_VOICES = {"builtin_james_v1": "marcus"}
+
+
+def voice_for(character: dict) -> str:
+    voice = character.get("voice") or "default"
+    return AVATAR_VOICES.get(character.get("avatar_id", ""), voice) if voice == "default" else voice
+
+
 def realtime_session(config: dict) -> dict:
     session = {
         "model": MODEL,
@@ -134,7 +144,7 @@ def realtime_session(config: dict) -> dict:
                 "turn_detection": None,  # fixed for the whole session (K5): we own turn-taking
                 "transcription": {"model": os.environ.get("BOSON_CAPTION_MODEL", "higgs-stt-3.1")},
             },
-            "output": {"voice": config["character"].get("voice") or "default"},
+            "output": {"voice": voice_for(config["character"])},
         },
         # Also caps the server's own follow-up after a web search, which ignores our per-response caps
         # (at 220 a fact-check answer ran ~18 s in the sim).
