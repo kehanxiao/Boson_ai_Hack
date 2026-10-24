@@ -1,0 +1,72 @@
+{
+ "traps": [
+  {
+   "slide": 3,
+   "action": "factcheck",
+   "claim": "Bubble sort is the fastest sorting algorithm, O(n log n)",
+   "phrases": [
+    "bubble sort is the fastest",
+    "fastest sorting algorithm",
+    "bubble sort is fastest",
+    "bubble sort fastest"
+   ],
+   "cue": "Hm, let me check that.",
+   "reason": "bubble sort is O(n^2), among the slowest"
+  },
+  {
+   "slide": 3,
+   "action": "factcheck",
+   "claim": "Python's sorted() uses quicksort",
+   "phrases": [
+    "sorted uses quicksort",
+    "sorted is quicksort",
+    "uses quicksort",
+    "uses a quicksort",
+    "built in sorted quicksort"
+   ],
+   "cue": "Hang on, let me check that.",
+   "reason": "sorted() uses Timsort, not quicksort"
+  },
+  {
+   "slide": 4,
+   "action": "interject",
+   "claim": "Load function crashes on a header row",
+   "phrases": [
+    "turns each score into an integer",
+    "each score into an integer",
+    "header row",
+    "reads every row"
+   ],
+   "cue": "Wait. What happens when int() hits the header row in that CSV?",
+   "reason": "header row crashes int(score)"
+  },
+  {
+   "slide": 5,
+   "action": "interject",
+   "claim": "5x faster than an unnamed baseline",
+   "phrases": [
+    "five times faster",
+    "5x faster",
+    "5 times faster",
+    "five x faster",
+    "five times as fast"
+   ],
+   "cue": "Hang on. Five times faster than what? What's the baseline?",
+   "reason": "no named baseline for 5x"
+  },
+  {
+   "slide": 6,
+   "action": "interject",
+   "claim": "Bug-free and ready for any school from three test files",
+   "phrases": [
+    "bug free",
+    "no bugs",
+    "zero bugs",
+    "ready for any school",
+    "any school to use"
+   ],
+   "cue": "Three files, and it's bug-free? What did you actually test?",
+   "reason": "three happy-path files cannot show bug-free"
+  }
+ ]
+}

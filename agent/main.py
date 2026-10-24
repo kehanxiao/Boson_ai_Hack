@@ -172,7 +172,8 @@ async def run(session_id: str) -> None:
 
         # The examiner reads the slides before the talk: prepared interjections, built once per session.
         try:
-            prepared = await traps_mod.build(config, cache_path=HERE / "runs" / f"{room_name}-traps.json")
+            prepared = await traps_mod.build(config, cache_path=HERE / "runs" / f"{room_name}-traps.json",
+                                             curated_path=HERE / "prompts" / "traps" / f"{room_name}.json")
         except Exception as exc:
             log.warning("no prepared interjections (%s); the director handles everything", exc)
             prepared = []

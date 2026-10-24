@@ -82,9 +82,14 @@ def normalize(text: str) -> str:
     return " " + re.sub(r"\s+", " ", text).strip() + " "
 
 
-async def build(config: dict, cache_path: pathlib.Path | None = None) -> list[Trap]:
-    """One Haiku call for the whole deck; cached per session so restarts don't pay for it again."""
-    if cache_path and cache_path.exists():
+async def build(config: dict, cache_path: pathlib.Path | None = None,
+                curated_path: pathlib.Path | None = None) -> list[Trap]:
+    """Curated traps for a fixed demo session if there are any (so the demo behaves the same every run);
+    otherwise one Haiku call for the whole deck, cached per session so restarts don't pay for it again."""
+    if curated_path and curated_path.exists():
+        data = json.loads(curated_path.read_text(encoding="utf-8"))
+        log.info("traps: using curated %s", curated_path.name)
+    elif cache_path and cache_path.exists():
         data = json.loads(cache_path.read_text(encoding="utf-8"))
     else:
         client = AsyncAnthropic()
