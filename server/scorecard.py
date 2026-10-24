@@ -32,7 +32,8 @@ CRITERIA = {
     "handling_questions": "Handling questions",
     "time_management": "Time management",
 }
-REMINDER_LABEL = {"t_minus_2": "two-minute", "time_up": "time's-up"}
+# t_minus_2 is the early reminder: T-2, or T-1 for a talk under 5 minutes (agent/exam.py).
+REMINDER_LABEL = {"t_minus_2": "time-left", "time_up": "time's-up"}
 
 SYSTEM = """You write the debrief scorecard for a presentation defense, from the log of a live AI examiner session.
 Judge the presenter, not the examiner. Be fair, specific and brief. No flattery.
