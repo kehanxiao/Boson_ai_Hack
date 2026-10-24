@@ -24,6 +24,25 @@ export async function fetchSessionConfig(sessionId: string): Promise<SessionConf
   }
 }
 
+/** FastAPI errors: {detail: "text"} or {detail: [{msg, loc}]} for validation. */
+async function errorMessage(res: Response): Promise<string> {
+  try {
+    const { detail } = await res.json()
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail) && detail[0]?.msg) return `${detail[0].loc?.at(-1) ?? 'field'}: ${detail[0].msg}`
+  } catch {
+    // not JSON
+  }
+  return `HTTP ${res.status}`
+}
+
+/** POST /api/sessions (multipart). Renders and preps the deck, so it takes a few seconds. */
+export async function createSession(form: FormData): Promise<{ session_id: string; slide_count: number }> {
+  const res = await fetch(serverUrl('/api/sessions'), { method: 'POST', body: form })
+  if (!res.ok) throw new Error(await errorMessage(res))
+  return res.json()
+}
+
 export function fetchToken(room: string, identity: string): Promise<{ url: string; token: string }> {
   const q = new URLSearchParams({ room, identity })
   return getJson(`/token?${q}`)

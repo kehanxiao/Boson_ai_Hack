@@ -1,0 +1,36 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 14px;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  width: fit-content;
+}
+
+.stepper button {
+  border: none;
+  background: none;
+  font-size: 20px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+.stepper output {
+  min-width: 70px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

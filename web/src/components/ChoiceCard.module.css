@@ -1,0 +1,47 @@
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.card:hover {
+  border-color: var(--muted);
+}
+
+.card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.card:has(input:focus-visible) {
+  outline: 2px solid var(--qa);
+  outline-offset: 2px;
+}
+
+.checked {
+  border-color: var(--text);
+  background: var(--panel-2);
+  box-shadow: inset 0 0 0 1px var(--text);
+}
+
+.title {
+  font-weight: 650;
+  font-size: 15px;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}

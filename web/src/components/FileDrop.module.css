@@ -1,0 +1,64 @@
+.drop {
+  border: 1.5px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.drop input {
+  display: none;
+}
+
+.over {
+  border-color: var(--qa);
+  background: color-mix(in srgb, var(--qa) 10%, var(--panel));
+}
+
+.has {
+  border-style: solid;
+}
+
+.pick {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 22px 16px;
+  border: none;
+  background: none;
+}
+
+.pick span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.size {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.error {
+  margin: 0;
+  padding: 0 14px 10px;
+  color: var(--bad);
+  font-size: 13px;
+}
