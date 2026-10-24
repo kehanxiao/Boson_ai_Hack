@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Viva: Stage 0 avatar check</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 24px; background: #111; color: #eee; }
+  button { font-size: 16px; padding: 8px 20px; }
+  #status { margin: 12px 0; color: #9ad; }
+  video { display: block; width: 480px; height: 640px; background: #000; }
+</style>
+<button id="join">Join</button>
+<div id="status">Not connected. Use headphones to avoid echo.</div>
+<video id="avatar" autoplay playsinline></video>
+<script src="https://unpkg.com/livekit-client@2.15.0/dist/livekit-client.umd.js"></script>
+<script>
+  // Stage 0 test page, adapted from Boson's viewer.html. The token comes from
+  // stage0_avatar.py's local /token endpoint, so it never appears in a URL.
+  const status = (text) => (document.getElementById("status").textContent = text);
+  const room = new LivekitClient.Room();
+  room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, _publication, participant) => {
+    if (participant.identity !== "boson-avatar") return;
+    if (track.kind === "video") track.attach(document.getElementById("avatar"));
+    else document.body.appendChild(track.attach());
+    status("Avatar connected. Say hello.");
+  });
+  document.getElementById("join").onclick = async () => {
+    status("Connecting...");
+    const { url, token } = await (await fetch("/token")).json();
+    await room.connect(url, token);
+    await room.localParticipant.setMicrophoneEnabled(true);
+    status("Connected, microphone on. Waiting for the avatar...");
+  };
+</script>
