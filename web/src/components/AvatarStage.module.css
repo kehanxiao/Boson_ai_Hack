@@ -1,0 +1,55 @@
+.stage {
+  position: relative;
+  margin: 0;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 35%, var(--panel-2), var(--panel));
+  border: 2px solid var(--line);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.speaking {
+  border-color: var(--interjecting);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--interjecting) 22%, transparent);
+}
+
+.stage video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.placeholder {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 38%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: clamp(28px, 4vw, 52px);
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.stage figcaption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 18px 12px 8px;
+  font-size: 13px;
+  color: var(--text);
+  background: linear-gradient(transparent, rgb(0 0 0 / 0.65));
+}
+
+@media (max-width: 860px) {
+  .stage {
+    aspect-ratio: 16 / 9;
+  }
+}

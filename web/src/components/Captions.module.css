@@ -1,0 +1,65 @@
+.captions {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 14px;
+  margin: auto;
+  text-align: center;
+}
+
+.line {
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+}
+
+.line p {
+  margin: 2px 0 0;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.examiner {
+  border-left-color: var(--interjecting);
+}
+
+.examiner p {
+  font-weight: 600;
+}
+
+.presenter p {
+  color: color-mix(in srgb, var(--text) 80%, var(--muted));
+}
+
+.meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.t {
+  font-family: var(--mono);
+}
+
+.lang {
+  color: var(--qa);
+  border: 1px solid color-mix(in srgb, var(--qa) 50%, transparent);
+  border-radius: 4px;
+  padding: 0 5px;
+  text-transform: none;
+  letter-spacing: 0;
+}

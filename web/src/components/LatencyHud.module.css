@@ -1,0 +1,33 @@
+.hud {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 3;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 0.6);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto 5ch 9ch;
+  gap: 10px;
+  text-align: right;
+}
+
+.row span:first-child {
+  text-align: left;
+}
+
+.row span:nth-child(2) {
+  color: var(--text);
+}
+
+.median {
+  opacity: 0.8;
+}

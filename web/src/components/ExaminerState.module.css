@@ -1,0 +1,49 @@
+.badge {
+  --c: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  color: var(--c);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--c);
+}
+
+.listening { --c: var(--listening); }
+.interjecting { --c: var(--interjecting); }
+.holding_floor { --c: var(--holding); }
+.qa { --c: var(--qa); }
+.debrief,
+.ended,
+.idle { --c: var(--debrief); }
+
+.listening .dot { animation: breathe 2.4s ease-in-out infinite; }
+.interjecting .dot,
+.holding_floor .dot { animation: pulse 0.7s ease-in-out infinite; }
+.holding_floor { box-shadow: 0 0 0 3px color-mix(in srgb, var(--holding) 25%, transparent); }
+
+@keyframes breathe {
+  50% { opacity: 0.35; }
+}
+
+@keyframes pulse {
+  50% { transform: scale(1.5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot { animation: none !important; }
+}

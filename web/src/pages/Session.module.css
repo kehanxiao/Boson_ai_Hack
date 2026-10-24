@@ -1,0 +1,113 @@
+.page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px 16px;
+  gap: 12px;
+}
+
+.header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand {
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fake {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+}
+
+.main {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 26vw, 400px);
+  gap: 16px;
+}
+
+.slideArea {
+  position: relative;
+  min-height: 0;
+}
+
+.aside {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scorecard {
+  text-align: center;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.message {
+  padding: 32px;
+  color: var(--muted);
+}
+
+.error {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bad) 18%, transparent);
+  color: var(--bad);
+  font-size: 14px;
+}
+
+@media (max-width: 860px) {
+  .page {
+    height: auto;
+    min-height: 100%;
+  }
+
+  .header {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .right {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .slideArea {
+    aspect-ratio: 16 / 10;
+  }
+
+  .aside {
+    max-height: 70vh;
+  }
+}

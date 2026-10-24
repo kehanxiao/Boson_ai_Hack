@@ -1,0 +1,36 @@
+.chip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--qa) 14%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--qa) 45%, transparent);
+  font-size: 14px;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.searching .icon {
+  border: 2px solid var(--qa);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.chip a {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
