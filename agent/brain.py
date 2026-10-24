@@ -63,6 +63,7 @@ class Brain:
         self.on_closed = on_closed
         self._asked: dict | None = None  # the decision in flight
         self._text = ""
+        self._marks: list[str] = []  # notes waiting for a commit that was queued behind a decision
         self.last_done = 0.0  # when its last response finished (the voice waits a moment after it: exam.py)
 
     @property
@@ -93,6 +94,18 @@ class Brain:
         if self.connected:
             await self.rt.add_note(text)
 
+    async def mark(self, text: str) -> None:
+        """A note at this point of the presenter's audio: commit what was heard so far, then the note, in that
+        order. While a decision is being written the commit is queued, so the note waits for it."""
+        if not self.connected:
+            return
+        if self.rt.busy:
+            await self.rt.commit()  # queued: sent when the decision is done
+            self._marks.append(text)
+            return
+        await self.rt.commit()
+        await self.rt.add_note(text)
+
     async def update_instructions(self, instructions: str) -> None:
         if self.connected:
             await self.rt.update_instructions(instructions)
@@ -121,6 +134,9 @@ class Brain:
             self.last_done = time.monotonic()
             asked, self._asked = self._asked, None
             await self.rt.flush_pending_commit()  # audio heard during the decision goes in first
+            marks, self._marks = self._marks, []
+            for text in marks:
+                await self.rt.add_note(text)
             if asked:
                 action, text = parse(self._text)
                 ms = int((time.monotonic() - asked["at"]) * 1000)

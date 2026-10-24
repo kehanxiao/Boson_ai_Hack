@@ -15,7 +15,11 @@ A hand-built worker: joins the LiveKit room, starts a Higgs Avatar session, and 
     - An exchange allows up to `follow_ups` replies: 1, or 2 for strictness 5. Then the brain is told to let the point go until Q&A.
     - Q&A: at each pause after the patience delay, or after 8 s of silence. At least `MIN_QA_QUESTIONS` (2) before END.
   - **The brain learns each slide when it is shown** (summary and weak points in the slide note). It sees the full digest only in Q&A. Knowing every slide up front, it raised later slides' claims early.
-  - **Never the same line twice** (`said`), and a cut-off line counts toward the follow-ups.
+  - **Never the same point a third time** (`said`, word overlap). Lines of 5 words or fewer are exempt ("Yes, go on."), and a cut-off line counts toward the follow-ups.
+  - **She is "speaking" only while the room hears her** (`output.on_started` → `audible_at`, until playback finishes). The avatar reports `lk.playback_started` (`wait_playback_start=True`), or the start is estimated at 1.3 s after the first captured audio. The floor-hold, talked-over detection and the brain's order all use this clock.
+    - **The brain's order:** `brain.mark()` commits the audio so far, then adds "[She starts speaking now.]" or "[She has finished speaking.]". When a decision is being written, the note waits behind the queued commit.
+    - **Overlap:** while she is heard, presenter audio is held back from the brain. If they stopped before she finished (trailing off, "yeah"), it is dropped. If they were still talking as she finished, or talked over her (barge-in), it is passed on. Live run (Sat 04:30): the brain took overlap as their answer and her line as earlier than it was heard.
+    - A talk-over → she stops, and the brain decides between "Let me finish, please." and answering what they said.
   - **Holding the floor:** 1.5 s. Reminder → acknowledgement (phrase / silence / jump to the last slide) → one escalation.
   - **Talked over:** her brain lines and Q&A questions stop when the presenter keeps talking past the hold window (cancel + clear + truncate). The brain is told what the presenter heard. Reminders, fact-checks and the verdict hold the floor.
     - Q&A: 0.8 s past the hold.

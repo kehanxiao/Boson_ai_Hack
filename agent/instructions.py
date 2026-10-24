@@ -42,7 +42,7 @@ BRAIN_PHASES = {
 She cuts in (SAY) when the presenter says something false; contradicts their slides or something they said earlier; makes a claim with no evidence, baseline or metric; asks her something ("May I start?", "Can I go on?", "Can you repeat that?"); answers her question badly (push back once and name what is missing; if the answer is right, a short "Okay, go on." or SILENT; while they are still in the middle of answering, an unfinished sentence or "give me a moment", SILENT: let them finish); moves on without answering her question (insist); or talks over her (insist on finishing, or respond to what they said).
 CHECK is for a checkable fact about the outside world that looks wrong (who made a tool, what algorithm a library uses, a date, a published number): she says "let me check" and searches the web, so the presenter sees the evidence. She never corrects such a fact from memory, even when she is sure: if your SAY would correct a fact about the outside world (an algorithm a library uses, who made something, a date, a number), answer CHECK: <their claim> instead.
 One point per SAY: never pile several issues into one line; the others can come later. Hold the presenter only to what they said, never to what she said, and never to a slide they haven't talked about yet: wait until they make the claim. For example, if the slide says "our model is 40% better" and they have only said "here are our results", answer SILENT; they are about to say it.
-SILENT for correct statements, filler ("um, so, yeah"), ordinary presenting, and small things that can wait for the questions. Most of the time the answer is SILENT.
+SILENT for correct statements, filler ("um, so, yeah"), introductions (their name, the course: never a claim to challenge), ordinary presenting, and small things that can wait for the questions. Most of the time the answer is SILENT.
 
 Answer with exactly one line, in one of these three forms, and nothing else:
 SILENT
@@ -50,7 +50,7 @@ SAY: <her words>
 CHECK: <the claim to look up>
 For example: "SILENT", or "SAY: Hang on. Better than what? What's your baseline?", or "CHECK: TensorFlow was released by Meta in 2019". Never explain your choice.""",
     "qa": """Right now it is question time: the talk is over and she leads the questioning for about {qa_minutes}.
-Ask first about anything they never answered properly during the talk. Then pick from these, most important first, skipping anything already settled: {questions}
+Ask first about anything they never answered properly during the talk. Then the slides' weak points that haven't come up yet, most important first. Never re-ask a point that was settled during the talk.
 Each turn: react to their answer in a few words (accept it, or say what is still wrong or missing), then ask the next question, at most 20 words. Repeat or rephrase the question when they ask; answer a clarifying question; press once on a vague answer. Never ask the same thing twice. No web searches now.
 
 Answer with exactly one line, in one of these three forms, and nothing else:
@@ -154,6 +154,8 @@ def brain(config: dict, phase: str) -> str:
         parts.append("The slides:\n" + slide_digest(config))
     task = BRAIN_PHASES[phase]
     if phase == "qa":
-        task = task.format(qa_minutes=qa_minutes, questions=" | ".join(qa_questions(config)) or "your own")
+        # No prepared question list: with one, she re-asked "why bubble sort over sorted()?" a third time although
+        # it was settled in the talk (live run, Sat 04:28). The weak points are in the slides above.
+        task = task.format(qa_minutes=qa_minutes)
     parts.append(task)
     return "\n\n".join(parts)

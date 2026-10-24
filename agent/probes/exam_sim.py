@@ -221,7 +221,8 @@ async def main() -> None:
     brain_key = os.environ.get("BOSON_BRAIN_API_KEY") or key  # as main.py
     realtime = RealtimeClient(REALTIME_URL, key, on_event)
     brain = Brain(REALTIME_URL, brain_key, on_decision)
-    controller = ExamController(config, realtime, SimulatedOutput(), PrintUI(now), slog, brain, reminder_before_s=45)
+    controller = ExamController(config, realtime, SimulatedOutput(delay=1.3), PrintUI(now), slog, brain,
+                                reminder_before_s=45)  # 1.3 s: heard as late as through the avatar
     await realtime.connect(realtime_session(config))
     await brain.connect(brain_session(config))
     await asyncio.sleep(1.5)
