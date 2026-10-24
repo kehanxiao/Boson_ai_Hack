@@ -494,12 +494,11 @@ class ExamController:
         slide = next((s for s in self.config.get("slides", []) if s["index"] == index), None)
         if not slide:
             return f"[Slide {index} is showing now.]"
-        note = f"[Slide {index} is showing now. On it: {slide.get('summary', '')}"
-        if slide.get("weak_points"):
-            # Live run (Sat 04:28): told the weak points plainly, she challenged a claim the presenter hadn't made.
-            note += (" Weak points to listen for; each counts only once the presenter actually says it: "
-                     + "; ".join(slide["weak_points"]))
-        return note + "]"
+        # What the slide shows and what is wrong with it, labelled apart (prompts.slide_line). Each problem counts
+        # only once the presenter says it (live run, Sat 04:28: told plainly, she challenged claims not yet made).
+        return (f"[Slide {index} is showing now. {prompts.slide_line(slide)}"
+                + (" Each problem counts only once the presenter actually says it." if slide.get("weak_points") else "")
+                + "]")
 
     def _qa_prompt(self) -> str:
         if self._qa_instructions is None:
@@ -591,6 +590,9 @@ class ExamController:
                 await self._ask_brain(*reask)  # audio that arrived during that decision
             elif self.phase == "qa" and d.ctx.get("first") and not self.engaged:
                 await self._fallback_question(first=True)  # question time must start with a question
+            elif self.phase == "qa" and d.ctx.get("forced") and not self.engaged:
+                # Asked for a different question and gave none: 35 s of dead air in a live run (Sat 06:56).
+                await self._fallback_question()
             return
         if self.engaged:
             await self.brain.forget(d)  # never heard: not part of what she said

@@ -76,9 +76,13 @@ def support_excerpt(config: dict) -> str:
 
 
 def slide_line(slide: dict) -> str:
-    line = f"Slide {slide['index']}: {slide.get('summary', '')}"
+    """What a slide shows, kept apart from what is wrong with it. The weak points are written as corrections
+    ("bubble sort is O(n^2), not O(n log n)"); run together, the brain quoted a correction as the slide's own
+    claim ("Your slide says O of n squared", live run Sat 06:56)."""
+    line = f"Slide {slide['index']} shows: {slide.get('summary', '')}"
     if slide.get("weak_points"):
-        line += " Weak points: " + "; ".join(slide["weak_points"])
+        line += (" Problems she has spotted in it (her own judgment, not written on the slide): "
+                 + "; ".join(slide["weak_points"]))
     return line
 
 
