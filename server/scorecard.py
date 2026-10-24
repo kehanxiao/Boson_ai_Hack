@@ -39,7 +39,7 @@ Judge the presenter, not the examiner. Be fair, specific and brief. No flattery.
 Answering in Indonesian, Mandarin or a mix of languages is allowed and never counts against the presenter; judge only what they said.
 
 Return:
-- verdict: at most three sentences: overall judgement, the main strength, the main weakness.
+- verdict: three short sentences, under 60 words in total: overall judgement, the main strength, the main weakness.
 - criteria: a score from 1 (poor) to 5 (excellent) and a one-sentence comment for each of clarity, rigour_and_evidence, handling_questions and time_management. Comments point at specific moments. Base time_management on the timing facts given.
 - moments: 3 to 6 of the presenter's strongest and weakest moments. quote: copy 5 to 20 consecutive words exactly, character for character, from ONE presenter line (never from the examiner). t: that line's t. note: one sentence on why it matters. Don't include ignored reminders; those are added separately.
 - improvements: exactly three concrete, actionable improvements, most important first."""

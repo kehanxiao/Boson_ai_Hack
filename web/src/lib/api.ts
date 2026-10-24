@@ -1,4 +1,12 @@
-import type { SessionConfig } from './contract'
+import type { Scorecard, SessionConfig } from './contract'
+
+export class ApiError extends Error {
+  readonly status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
 
 export const SERVER_URL = (import.meta.env.VITE_SERVER_URL || 'http://localhost:8000').replace(/\/$/, '')
 
@@ -40,6 +48,13 @@ async function errorMessage(res: Response): Promise<string> {
 export async function createSession(form: FormData): Promise<{ session_id: string; slide_count: number }> {
   const res = await fetch(serverUrl('/api/sessions'), { method: 'POST', body: form })
   if (!res.ok) throw new Error(await errorMessage(res))
+  return res.json()
+}
+
+/** 404 = no session log yet; 502 = generation failed (retryable). First call takes ~15 s. */
+export async function fetchScorecard(sessionId: string): Promise<Scorecard> {
+  const res = await fetch(serverUrl(`/api/sessions/${encodeURIComponent(sessionId)}/scorecard`))
+  if (!res.ok) throw new ApiError(res.status, await errorMessage(res))
   return res.json()
 }
 

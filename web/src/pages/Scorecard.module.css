@@ -1,0 +1,128 @@
+.page {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 32px 16px 56px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.again {
+  flex-shrink: 0;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.page section {
+  margin-top: 32px;
+}
+
+.page h2 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.verdict p {
+  margin: 0;
+  font-size: clamp(18px, 2.2vw, 22px);
+  line-height: 1.5;
+  padding-left: 16px;
+  border-left: 3px solid var(--text);
+}
+
+.improvements {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: item;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.improvements li {
+  counter-increment: item;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.improvements li::before {
+  content: counter(item);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.status {
+  margin-top: 32px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 18px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.status p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.status button {
+  margin-top: 12px;
+}
+
+.spinner {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border: 2px solid var(--muted);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 2.4s; }
+}

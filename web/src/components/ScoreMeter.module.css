@@ -1,0 +1,36 @@
+.meter {
+  --c: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.good { --c: var(--ok); }
+.fair { --c: var(--warn); }
+.poor { --c: var(--bad); }
+
+.track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--c) 18%, transparent);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--c);
+}
+
+.value {
+  min-width: 3ch;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.value small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}

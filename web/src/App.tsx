@@ -1,7 +1,8 @@
+import { Scorecard } from './pages/Scorecard'
 import { Session } from './pages/Session'
 import { Setup } from './pages/Setup'
 
-// Tiny path router: / (setup), /session/:id, /scorecard/:id (Scorecard page still to come).
+// Tiny path router: / (setup), /session/:id, /scorecard/:id.
 export default function App() {
   const [, page, id] = window.location.pathname.split('/')
   const params = new URLSearchParams(window.location.search)
@@ -16,6 +17,8 @@ export default function App() {
       />
     )
   }
+
+  if (page === 'scorecard' && id) return <Scorecard sessionId={decodeURIComponent(id)} />
 
   return <Setup />
 }
