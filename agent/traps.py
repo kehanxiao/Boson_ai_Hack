@@ -56,7 +56,9 @@ complexity or wrong outside-world fact, data leakage, an overclaim, a contradict
   speech-to-text system would write them. Include variants: digits and words ("40%", "40 percent", "forty
   percent"), spacing variants ("n log n", "o n log n"), synonyms ("bug-free", "bug free", "no bugs"). Each phrase
   must be specific to this claim; never a common word on its own.
-- "cue": what the examiner says, at most 20 words, sharp and specific (for a factcheck: "Let me check that.").
+- "cue": what the examiner says, at most 20 words, sharp and specific, the way a professor actually talks in a room:
+  contractions, plain words, no formal written English ("Hang on. Faster than what? What's the baseline?"). For a
+  factcheck: a short preamble only, such as "Hm, let me check that."
 - "claim": the claim being challenged, in a few words.
 - "reason": a few words for the log.
 Skip minor issues (dense slides, uncited motivation statistics) and slides with no weak points."""

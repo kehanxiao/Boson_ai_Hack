@@ -285,7 +285,7 @@ class ExamController:
             self.qa_turn = self._spawn(self._qa_end_of_turn())
         elif self.phase == "presentation" and self.pending_ack and not self.engaged:
             cue, self.pending_ack = self.pending_ack, None  # decided while they were still talking
-            await self.say("ack", f"Say, in character: \"{cue}\"", max_tokens=40, metric="answer_end_to_reply")
+            await self.say("ack", f"Make this point in your own words, the way you'd say it out loud, in one or two short sentences: {cue}", max_tokens=40, metric="answer_end_to_reply")
 
     async def on_slide(self, index: int) -> None:
         if index == self.slide:
@@ -577,7 +577,7 @@ class ExamController:
             if self.presenter_speaking or self.engaged:
                 self.pending_ack = cue  # deliver it at their next pause
             else:
-                await self.say("ack", f"Say, in character: \"{cue}\"", max_tokens=40,
+                await self.say("ack", f"Make this point in your own words, the way you'd say it out loud, in one or two short sentences: {cue}", max_tokens=40,
                                metric="answer_end_to_reply", ref=meta["pause_at"])
             return
         if d.action == "insist":
@@ -634,7 +634,7 @@ class ExamController:
             awaiting["insists"] += 1
             cue = cue or "Hold on. You haven't answered my question."
             await self.say("insist", "The presenter moved on without answering your question. Cut in firmly and hold "
-                           f"the floor. Say, in character: \"{cue}\"", hold=True, max_tokens=60,
+                           f"the floor. Make this point in your own words, the way you'd say it out loud, in one or two short sentences: {cue}", hold=True, max_tokens=60,
                            metric="pause_to_interjection", ref=meta["pause_at"])
             return
         self.awaiting = None
@@ -668,7 +668,7 @@ class ExamController:
             cue = d.cue or "What is your evidence for that?"
             if slide < self.slide:
                 cue = f"Going back to slide {slide}: {cue}"  # they have already clicked on
-            await self.say("interjection", f"Interject now, cutting in while the presenter is mid-flow. Say, in character: \"{cue}\"",
+            await self.say("interjection", f"Interject now, cutting in while the presenter is mid-flow. Make this point in your own words, the way you'd say it out loud, in one or two short sentences: {cue}",
                            hold=True, max_tokens=90, metric="pause_to_interjection", ref=meta["pause_at"])
 
     async def _timer(self) -> None:
