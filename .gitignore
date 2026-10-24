@@ -40,3 +40,6 @@ recordings/
 
 # Probe audio cache (synthesised presenter speech)
 agent/probes/.cache/
+
+# Agent session logs (uploaded to the server at the end of a run)
+agent/runs/

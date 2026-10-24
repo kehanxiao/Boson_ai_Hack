@@ -8,6 +8,8 @@ dependencies = [
     "requests",
     "python-dotenv",
     "aiohttp",
+    "livekit-plugins-silero==1.8.8",
+    "anthropic>=2.3.0",
 ]
 
 [tool.uv]

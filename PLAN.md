@@ -171,9 +171,12 @@ We chose it over the LiveKit Agents plugin because manual commits, `response.cre
 - `GET /token?room=&identity=` → `{url, token}`.
 - `POST /api/sessions` (multipart: `scenario`, `character` = preset id or `custom_text`, `time_limit_s`, `qa_s`, `notes`, `slides` PDF, optional `support_doc`) → `{session_id, slide_count}`.
 - `GET /api/sessions/{id}` → **SessionConfig**:
-  - `{session_id, scenario, time_limit_s, qa_s, notes, instructions}`
+  - `{session_id, scenario, time_limit_s, qa_s, notes, instructions}`. **`instructions` is optional and ignored by the agent**, which assembles the phase instructions itself (`agent/instructions.py`: `agent/prompts/examiner_base.md` + character + scenario + notes + slide digest + phase rules). The server doesn't need to assemble them.
   - `character: {id, name, persona, voice, avatar_id, interrupt_rate, strictness}`
-  - `slides: [{index, image_url, summary, claims[], weak_points[], questions[]}]`
+    - **Custom characters:** `id` stays the preset id. The server appends `custom_text` (or free text sent as `character`, on top of the Supervisor) to the preset's `persona`.
+    - The agent uses `persona` as given. It has no per-character prompt files.
+    - `interrupt_rate` (`low|medium|high`) sets the agent's interjection cooldown (45/30/20 s) and its Q&A patience (1.6/1.3/1.0 s).
+  - `slides: [{index, image_url, summary, claims[], weak_points[], questions[]}]`. The same shape as `demo/prepped-analysis.json` (B's cached prep output, a JSON list of these objects).
 - `POST /api/sessions/{id}/log`: the agent uploads its log at the end, as the **raw request body**. `Content-Type: application/x-ndjson`, one log object per line, exactly the `sample-log.jsonl` format. Response: `{ok: true, lines: N}`.
 - `GET /api/sessions/{id}/scorecard` → **Scorecard**:
   - `{verdict, criteria:[{name, score_1_5, comment}], improvements:[3]}`

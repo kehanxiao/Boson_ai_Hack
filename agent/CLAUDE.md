@@ -2,18 +2,26 @@
 
 A hand-built worker: joins the LiveKit room, starts a Higgs Avatar session, and drives a raw Higgs Realtime WebSocket. It owns turn-taking: VAD commits, the director, holding the floor, the timer and phases. Design rationale: `PLAN.md` → "Core design decisions" and "Architecture".
 
-## Planned files
-- `main.py`: wiring.
-- `realtime.py`: WS client; **one-line event logging, no base64**.
-- `vad.py`: Silero pause detection → commits.
-- `director.py`: Haiku "interject now?" decision with cooldowns.
-- `floor.py`: holding the floor, acknowledgement, escalation.
-- `timer.py`
-- `phases.py`: presentation → Q&A → debrief.
-- `session_log.py`: JSONL in the `PLAN.md` log format.
-- `prompts/examiner_base.md`, `prompts/characters/*.md`.
+## Files (Stage 2)
+- `main.py`: live entry point (`uv run main.py [session_id]`, `VIVA_AVATAR=0` for voice-only, `VIVA_FACTCHECK=0`). Joins the room, starts the avatar (429 retry), loads SessionConfig from the server (falls back to `demo/session-config.json` for `demo`), forwards presenter audio, handles `viva.ctl`, releases the avatar with retries, uploads the log.
+- `exam.py`: `ExamController`, the whole exam logic.
+  - phases and timer
+  - director gating (cooldown per `interrupt_rate`, none in the first 20 s, at most 1 per slide)
+  - holding the floor (1.5 s), reminder → acknowledgement (phrase / silence / jump to the last slide) → one escalation
+  - Q&A end-of-turn (patience per `interrupt_rate`) and barge-in (cancel + clear + truncate)
+  - fact-check, debrief verdict
+  - It tracks every utterance from request to finished playing, including the server's own follow-up after a web search.
+- `realtime.py`: WS client. Queues commits during a response, refuses `response.create` while busy or while a server tool is pending. One-line logging, no base64.
+- `director.py`: Haiku decision (`action none|interject|factcheck`, `kind`, `reason`, `cue`, `claim`), structured output, `effort: low`.
+- `instructions.py` + `prompts/`: per-phase examiner instructions, and per-response instructions (prompt + cue).
+- `vad.py`: Silero pause detector (0.6 s). `output.py`: avatar / voice-only / simulated playback with per-utterance finished callbacks.
+- `session_log.py`: JSONL in the contract format, uploaded as raw `application/x-ndjson`. `ui.py`: `viva.ui` publisher (LiveKit, or print for sims).
+- `probes/exam_sim.py`: headless end-to-end exam on the demo deck (real Higgs + Haiku, simulated playback).
+- `stage0_avatar.py` + `viewer.html`: the Stage 0 check, kept for quick avatar smoke tests.
 
-Stack: uv, Python 3.11+, `livekit-agents` (PyPI, for `DataStreamAudioOutput`), `livekit` (rtc + api), `websockets`, `anthropic`, `python-dotenv`.
+Stack: uv, Python 3.12, `livekit-agents` 1.8.8 (for `DataStreamAudioOutput`), `livekit-plugins-silero` 1.8.8, `websockets`, `anthropic`, `python-dotenv`.
+
+**Director latency** (Haiku 5.5, `effort: low`): **~0.9–1.3 s**, mostly network. At low effort there are no thinking blocks, and `thinking: disabled` was no faster. Expected pause → interjection ≈ 0.6 s VAD + ~0.4 s transcript + ~1 s director + ~0.45 s first audio ≈ **2.5 s**, plus the avatar render.
 
 ## Starting point
 `docs/vendor/boson/models/higgs-avatar/realtime-sessions.md`, the hand-built `agent.py` walkthrough:
@@ -72,6 +80,20 @@ Stack: uv, Python 3.11+, `livekit-agents` (PyPI, for `DataStreamAudioOutput`), `
   - **Unreliable wording:** the follow-up sometimes only repeats the preamble, sometimes restates the wrong claim first, and runs long (35 s). Fix with session-level rules plus a length cap. The follow-up response doesn't carry the per-response `instructions` of the request that triggered the search.
 - ⚠️ **Never put director cues in conversation items.** As a `user` message the model read the cue aloud ("The director's cue is asking…") and answered it itself. Per-response `instructions` behaved perfectly (K2).
 - **Verbosity:** without a cap, Q&A replies ran 17–54 s. Use per-response `max_output_tokens`, plus session `max_output_tokens` for server-initiated follow-ups (e.g. after a search).
+
+## Stage 2 findings (Fri 22:25, `probes/exam_sim.py`, full headless exam, 8/8 checks pass)
+- ⚠️ **Committing presenter audio while a server `web_search` runs makes the server drop the follow-up answer.** The exam stalled with no reminders and no Q&A. `realtime.py` now holds commits until the follow-up has started. The audio keeps buffering, so nothing is lost.
+- **Watchdog** (`exam.py`), so nothing can leave the examiner "busy" forever:
+  - `response.create` with no `response.created` in 8 s is dropped.
+  - A search follow-up missing after 12 s gets an answer from memory instead, so the fact-check still lands.
+  - A missing `playback_finished` is timed out (audio length + 4 s).
+- **The server rejects commits under 100 ms of audio** (`invalid_request_error`, "buffer too small"). `commit()` skips them and returns `sent|queued|merged|skipped`.
+- **Transcripts arrive ~0.4–1 s after the pause, often after the presenter has clicked on.** Chunks are tagged with the slide that was showing when that speech *began* (`commits` queue in `exam.py`).
+- **The director queues the newest chunk while busy, instead of dropping it.** Dropping lost the "40%" claim in the first run.
+- **Fact-checks have their own 10 s cooldown.** The 30 s interjection cooldown had blocked the LightGBM moment. The cue forces `web_search` ("do not answer from memory"), because B's slide digest already contains the correction.
+- **Director latency in a live run: ~0.9–3.4 s, median ~2 s** (variable). Pause → interjection measured **2.0 s** ("40%") and **3.3 s** (fact-check), excluding the avatar. If that feels slow live, the fallback is a local model on the 5090 via LM Studio.
+- **Q&A:** answer end → reply **~1.1 s**. Questions skip slides already handled by an interjection. The Q&A instructions list the points already raised, so she doesn't re-ask them.
+- **The sim's Indonesian and Mandarin come from an English TTS voice and transcribe as English gibberish.** Real speech worked in Stage 0, so language checks in the sim are informational only.
 
 ## UI events
 Publish `viva.ui` messages exactly as specified in `PLAN.md` → "Interfaces between A and B", via `room.local_participant.send_text(json, topic="viva.ui")`. Listen for `viva.ctl` with a text stream handler (pattern in `docs/vendor/higgs-realtime-tutorial/livekit/probe.py`).
