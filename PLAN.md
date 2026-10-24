@@ -10,6 +10,7 @@
 >   - She nudges after 4 s of silence.
 >   - The early time reminder comes at T−2, or T−1 for a talk under 5 minutes.
 > - **The interface is voice only:** the Session page shows no transcript (Sat 10:40). The agent still sends `caption` messages, and the log keeps every line for the scorecard.
+> - **The server starts the agent** (`server/agent_launcher.py`, Sat 12:15): one per session room, when the Session page opens, and it leaves 5 minutes after the presenter. It is no longer started by hand.
 > - **The voice gives the verdict** when Q&A is on. A session with `qa_s: 0` has no Q&A and no verdict.
 > - **Never built:** `floor.py`, `timer.py`, `phases.py` and `prompts/characters/` (that logic lives in `agent/exam.py` and the character's `persona`), and `docs/architecture.png` (the diagram is in the README).
 > - **Checkpoints:**
@@ -227,6 +228,7 @@ We chose it over the LiveKit Agents plugin because manual commits, `response.cre
     - The agent uses `persona` as given. It has no per-character prompt files.
     - `interrupt_rate` (`low|medium|high`) sets how long she waits after speaking before raising something new (8/4/3 s) and her Q&A patience (2.5/2.0/1.6 s). `strictness` 5 lets her press a point twice instead of once.
   - `slides: [{index, image_url, summary, claims[], weak_points[], questions[]}]`. The same shape as `demo/prepped-analysis.json` (B's cached prep output, a JSON list of these objects).
+- `POST /api/sessions/{id}/agent` → `{ok: true}` (Sat 12:15): starts the examiner agent for that session unless one is already in its room; 404 for an unknown session. The Session page calls it when it opens. A presenter token (`GET /token?identity=presenter`) does the same, as a fallback. `VIVA_AUTOSTART_AGENT=0` turns both off.
 - `POST /api/sessions/{id}/log`: the agent uploads its log at the end, as the **raw request body**. `Content-Type: application/x-ndjson`, one log object per line, exactly the `sample-log.jsonl` format. Response: `{ok: true, lines: N}`.
 - `GET /api/sessions/{id}/scorecard` → **Scorecard**:
   - `{verdict, criteria:[{name, score_1_5, comment}], improvements:[3]}`

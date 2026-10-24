@@ -7,6 +7,7 @@ import { ReminderBanner } from '../components/ReminderBanner'
 import { SessionControls } from '../components/SessionControls'
 import { SlideViewer } from '../components/SlideViewer'
 import { Timer } from '../components/Timer'
+import { startAgent } from '../lib/api'
 import { useClock } from '../lib/useClock'
 import { useSessionConfig } from '../lib/useSessionConfig'
 import { useVivaSession } from '../lib/useVivaSession'
@@ -26,6 +27,11 @@ export function Session({ sessionId, fake, speed, autostart = false }: Props) {
   const session = useVivaSession({ sessionId, fake, speed, onReplaySlide: setSlide, currentSlide: () => slide })
   const { view } = session
   const now = useClock(session.link, view.ended)
+
+  // Live: get the agent (and its avatar) starting while the presenter reads the page.
+  useEffect(() => {
+    if (!fake) void startAgent(sessionId)
+  }, [fake, sessionId])
 
   // Fake replay only (?fake=1&autostart=1): live mode needs a real click to start audio.
   const { start, status } = session

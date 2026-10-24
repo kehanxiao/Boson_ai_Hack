@@ -63,6 +63,15 @@ export async function fetchScorecard(sessionId: string): Promise<Scorecard> {
   return res.json()
 }
 
+/** Ask the server to start the examiner agent for this session (it takes ~30 s with the avatar). Best effort. */
+export async function startAgent(sessionId: string): Promise<void> {
+  try {
+    await fetch(serverUrl(`/api/sessions/${encodeURIComponent(sessionId)}/agent`), { method: 'POST' })
+  } catch {
+    // the presenter token request starts it too
+  }
+}
+
 export function fetchToken(room: string, identity: string): Promise<{ url: string; token: string }> {
   const q = new URLSearchParams({ room, identity })
   return getJson(`/token?${q}`)

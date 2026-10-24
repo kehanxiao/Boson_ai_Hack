@@ -82,24 +82,25 @@ cp .env.example .env          # fill in BOSON_API_KEY, LIVEKIT_URL/KEY/SECRET, A
 Everyone running parts of the system must use the **same LiveKit project**, or the browser and the agent never meet.
 
 ## Run
-Three terminals:
+Two terminals:
 ```bash
 cd server && uv run uvicorn main:app --port 8000
 cd web && npm run dev                      # http://localhost:5173
-cd agent && uv run main.py <session_id>    # one agent per session
 ```
+**The server starts the examiner agent by itself** when a session page opens: one `uv run main.py <session_id>` in `agent/` per session, with its log in `agent/runs/agent-<session_id>-*.log`. The agent leaves 5 minutes after the last presenter, which frees its avatar slot. To run the agent by hand instead (for example on another machine), set `VIVA_AUTOSTART_AGENT=0` and start `cd agent && uv run main.py <session_id>`.
+
 1. Open http://localhost:5173. Pick a scenario and an examiner, upload a slides PDF, set the time, and click **Prepare my examiner** (about 5–10 s).
-2. You land on `/session/<session_id>`. Start the agent with that id (`uv run main.py <session_id>`), wait for `ready`, then click **Start presentation** and allow the microphone.
+2. You land on `/session/<session_id>`, and the agent starts in the background (about 10–30 s with the avatar). Click **Start presentation** and allow the microphone. If the agent is still joining, the page keeps trying until it answers, and the timer starts then.
 3. Present. Use ← → or a presentation clicker to change slides. Use **Go to Q&A** and **End** to move between phases, or let the timer do it.
 4. When the session ends, open the scorecard. The first time, it takes about 15 s to write.
 
-After an exam, the agent stays in the room and waits for the next **Start**. Pressing Start again, or leaving the page, resets it to a fresh exam with a new log.
+After an exam, the agent stays in the room and waits for the next **Start**. Pressing Start again, or leaving the page, resets it to a fresh exam with a new log. Coming back within 5 minutes reuses it; later, a new one starts.
 
-**Built-in sessions** need no upload. Start the agent with the session name (`uv run main.py demo3`), then open http://localhost:5173/session/demo3 (or `gradebook`, `demo`):
+**Built-in sessions** need no upload: open http://localhost:5173/session/demo3 (or `gradebook`, `demo`), and the agent starts by itself:
 - `demo3`: 3 slides, 3 minutes, no Q&A. A timed script with a planted claim for each feature is in [`docs/demo-script-3min.md`](docs/demo-script-3min.md).
 - `gradebook`: the 6-slide GradeBook deck, 4 minutes plus 1:30 of Q&A and the verdict.
 - `demo`: the 8-slide ERwait deck. Its scorecard is always the sample (`demo/sample-scorecard.json`), not your run.
-**Voice-only** (no avatar slot used, and you hear her ~1.4 s sooner): choose *Voice only* on the Setup page, or force it for any session with `VIVA_AVATAR=0 uv run main.py <session_id>`.
+**Voice-only** (no avatar slot used, and you hear her ~1.4 s sooner): choose *Voice only* on the Setup page, or force it for every session by starting the server (or a hand-started agent) with `VIVA_AVATAR=0`.
 **Use a wired headset**: speakers feed the examiner's voice back into the mic.
 
 ### Without any keys
@@ -146,7 +147,8 @@ Run the server and the web app (no keys needed for these two pages):
 - **Fact-checks:** the web search fires reliably for "who made it / when" claims. On technical claims ("`sorted()` uses quicksort") the brain sometimes corrects you from memory instead. The search follow-up is sometimes unreliable in wording or length; if it hasn't arrived after 12 s, the examiner gives the correction from memory.
 - **Upstream failures:** a Realtime response occasionally fails upstream (`response.done status=failed`). The voice and the brain retry once.
 - **Avatar capacity is shared** across all hackathon teams, and the avatar adds latency. If no slot is free, run voice-only (`VIVA_AVATAR=0`).
-- **The agent is started by hand for each session** (`uv run main.py <session_id>`). There is no automatic dispatch yet.
+- **One agent process per session, on the server's machine.** The server starts it (`server/agent_launcher.py`) when the session page opens, unless an agent is already in the room, and it leaves 5 minutes after the presenter. It takes about 10–30 s to be ready with the avatar.
+- **Built-in sessions use fixed room names.** Two people on the same LiveKit project opening the same built-in session (both on `demo3`, say) land in one room as the same `presenter` and keep disconnecting each other. Use separate LiveKit projects, or upload a deck (every upload gets its own session id).
 - **No authentication.** `/token` issues a LiveKit token for any room and identity, and uploads are stored on the server's disk (`server/data/`). This is a local demo setup, not a deployment.
 - **The scorecard is an LLM judgement.** Quotes, timestamps, slides and ignored reminders are verified against the log in code, but the scores and comments are Claude Haiku's opinion.
 - **The demo decks are generated** by scripts in `server/scripts/` (outlines in `demo/*-outline.md`), not designed by hand.

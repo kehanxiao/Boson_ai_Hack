@@ -48,6 +48,8 @@ MODEL = os.environ.get("BOSON_REALTIME_MODEL", "higgs-realtime-1.5-preview")
 SERVER = os.environ.get("VIVA_SERVER_URL", "http://localhost:8000")
 USE_AVATAR = os.environ.get("VIVA_AVATAR", "1") != "0"
 FACTCHECK = os.environ.get("VIVA_FACTCHECK", "1") != "0"
+# Set by the server when it starts the agent itself: leave after this long with no presenter in the room (0: never).
+IDLE_EXIT_S = float(os.environ.get("VIVA_AGENT_IDLE_EXIT_S", "0") or 0)
 
 log = logging.getLogger("viva")
 
@@ -265,10 +267,34 @@ async def run(session_id: str) -> None:
         room.register_text_stream_handler("viva.ctl", lambda reader, identity: asyncio.ensure_future(read_ctl(reader, identity)))
         log.info("ready: waiting for the presenter's {type: start}")
 
-        # One exam after another until Ctrl-C. Only completed exams are uploaded for the scorecard.
-        while True:
+        idle = asyncio.Event()
+
+        async def exit_when_idle() -> None:
+            """Started by the server (server/agent_launcher.py): leave once no presenter has been in the room for
+            IDLE_EXIT_S, so the avatar slot is freed. The next visit starts a fresh agent."""
+            last_seen = time.monotonic()
+            while True:
+                await asyncio.sleep(5)
+                if any(p.identity not in (AVATAR_IDENTITY, AGENT_IDENTITY) for p in room.remote_participants.values()):
+                    last_seen = time.monotonic()
+                elif time.monotonic() - last_seen > IDLE_EXIT_S:
+                    log.info("no presenter for %.0f s: leaving", IDLE_EXIT_S)
+                    idle.set()
+                    return
+
+        if IDLE_EXIT_S:
+            asyncio.create_task(exit_when_idle())
+
+        # One exam after another until Ctrl-C (or, when started by the server, until nobody comes). Only completed
+        # exams are uploaded for the scorecard.
+        while not idle.is_set():
             exam = current
-            await exam.ended.wait()
+            ended, quiet = asyncio.create_task(exam.ended.wait()), asyncio.create_task(idle.wait())
+            await asyncio.wait({ended, quiet}, return_when=asyncio.FIRST_COMPLETED)
+            ended.cancel()
+            quiet.cancel()
+            if idle.is_set():
+                break
             if exam.completed:
                 await asyncio.sleep(1.0)  # let the last viva.ui messages go out
                 exam.slog.upload(SERVER, room_name)

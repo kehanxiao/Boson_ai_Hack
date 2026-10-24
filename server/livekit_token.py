@@ -1,10 +1,13 @@
-"""GET /token?room=&identity= -> {url, token} (contract: PLAN.md, Interfaces between A and B)."""
+"""GET /token?room=&identity= -> {url, token} (contract: PLAN.md, Interfaces between A and B).
+
+A presenter token also makes sure the room has an examiner agent (agent_launcher.py)."""
 
 from datetime import timedelta
 
 from fastapi import APIRouter, HTTPException, Query
 from livekit import api
 
+import agent_launcher
 from config import env
 
 router = APIRouter()
@@ -13,7 +16,7 @@ NAME_PATTERN = r"^[A-Za-z0-9_.-]{1,64}$"
 
 
 @router.get("/token")
-def get_token(
+async def get_token(
     room: str = Query(..., pattern=NAME_PATTERN),
     identity: str = Query(..., pattern=NAME_PATTERN),
 ) -> dict:
@@ -35,4 +38,6 @@ def get_token(
         .with_ttl(timedelta(hours=2))
         .to_jwt()
     )
+    if identity == "presenter":
+        await agent_launcher.ensure_agent(room)
     return {"url": url, "token": token}

@@ -12,6 +12,7 @@ import anthropic
 from fastapi import APIRouter, HTTPException, Path as PathParam, Request
 from fastapi.responses import FileResponse
 
+import agent_launcher
 from config import DATA_DIR
 from fixed_sessions import fixed_file
 from scorecard import ScorecardError, generate_scorecard, read_log
@@ -35,6 +36,14 @@ def session_config(session_id: str) -> dict:
 @router.get("/{session_id}")
 def get_session(session_id: str = SessionId) -> dict:
     return session_config(session_id)
+
+
+@router.post("/{session_id}/agent")
+async def start_agent(session_id: str = SessionId) -> dict:
+    """The Session page calls this when it opens, so the agent (and its avatar, ~30 s) is ready by Start."""
+    session_config(session_id)  # 404 for an unknown session
+    await agent_launcher.ensure_agent(session_id)
+    return {"ok": True}
 
 
 @router.get("/{session_id}/slides/{n}.png")

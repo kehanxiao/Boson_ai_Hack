@@ -20,7 +20,7 @@ Stack: Vite, React, TS, `livekit-client`. Server base URL comes from `VITE_SERVE
   - No transcript on screen: the interface is voice only (Sat 10:40). `caption` messages still arrive and the log keeps every line for the scorecard.
   - `ExaminerState` badge: listening / interjecting / holding the floor / Q&A / debrief.
   - `LatencyHud`
-  - Fetch `GET /api/sessions/{id}`, then `GET /token?room={id}&identity=presenter`.
+  - Fetch `GET /api/sessions/{id}` and call `POST /api/sessions/{id}/agent` (the server starts the agent; ~10–30 s with the avatar), then on Start `GET /token?room={id}&identity=presenter`.
 - **Scorecard:** `GET /api/sessions/{id}/scorecard`.
   - The verdict
   - criteria scores

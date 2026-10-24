@@ -11,6 +11,7 @@ Stack: uv, Python 3.12+, `fastapi`, `uvicorn`, `python-multipart`, `livekit-api`
   - Renders slides to `slides/<n>.png` (1-based, ~2× scale) plus per-slide text.
   - Runs prep.
 - `GET /api/sessions/{id}` → SessionConfig. Serve slide images so `image_url` resolves, e.g. `/api/sessions/{id}/slides/{n}.png`.
+- `POST /api/sessions/{id}/agent` → `{ok: true}`: starts the examiner agent for the session (`agent_launcher.py`) unless LiveKit shows `viva-agent` already in the room, or one started here is still running. A presenter token request does the same. The agent's output goes to `agent/runs/agent-<id>-*.log`, and it leaves after `VIVA_AGENT_IDLE_EXIT_S` (300) with no presenter. `VIVA_AUTOSTART_AGENT=0` turns this off.
 - `POST /api/sessions/{id}/log`: the agent uploads its JSONL log at the end, as the raw request body (`Content-Type: application/x-ndjson`). Save it as `server/data/<id>/log.jsonl` and return `{ok: true, lines: N}`.
 - `GET /api/sessions/{id}/scorecard` → Scorecard (generated from the log + slide analysis, cached to disk).
 - `session_id = "demo"` must always work, using the `demo/` sample files. This is a fallback if Haiku or the network fails.
