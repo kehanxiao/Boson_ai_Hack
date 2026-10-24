@@ -35,7 +35,7 @@ from ui import LiveKitUI  # noqa: E402
 AGENT_IDENTITY = "viva-agent"
 AVATAR_IDENTITY = "boson-avatar"
 PRESENTER_IDENTITY = "presenter"
-MAX_DURATION_S = 1800
+MAX_DURATION_S = 3600  # the account limit: the avatar leaves after this, so restart the agent for long sessions
 
 BOSON_KEY = os.environ["BOSON_API_KEY"]
 BOSON_BASE = os.environ.get("BOSON_BASE_URL", "https://api.boson.ai/v1")
@@ -49,16 +49,21 @@ FACTCHECK = os.environ.get("VIVA_FACTCHECK", "1") != "0"
 log = logging.getLogger("viva")
 
 
+# Fixed demo sessions that work from demo/ files even without the server.
+DEMO_SESSIONS = {"demo": "session-config.json", "gradebook": "session-config-coding.json"}
+
+
 def load_config(session_id: str) -> dict:
     try:
         r = requests.get(f"{SERVER}/api/sessions/{session_id}", timeout=5)
         r.raise_for_status()
         return r.json()
     except requests.RequestException as exc:
-        if session_id != "demo":
+        fallback = HERE.parent / "demo" / DEMO_SESSIONS.get(session_id, "")
+        if session_id not in DEMO_SESSIONS or not fallback.exists():
             raise SystemExit(f"cannot load session {session_id} from {SERVER}: {exc}")
-        log.warning("server unavailable (%s); using demo/session-config.json", exc)
-        return json.loads((HERE.parent / "demo" / "session-config.json").read_text(encoding="utf-8"))
+        log.warning("server unavailable (%s); using %s", exc, fallback.name)
+        return json.loads(fallback.read_text(encoding="utf-8"))
 
 
 def livekit_token(room: str, identity: str, *, publish_on_behalf: str | None = None, subscribe=True) -> str:
@@ -137,15 +142,14 @@ def realtime_session(config: dict) -> dict:
 async def run(session_id: str) -> None:
     config = load_config(session_id)
     room_name = config.get("session_id", session_id)
-    slog = SessionLog(HERE / "runs" / f"{room_name}-{time.strftime('%Y%m%d-%H%M%S')}.jsonl")
 
     avatar = create_avatar(room_name, config["character"].get("avatar_id", "builtin_claire_v1")) if USE_AVATAR else None
     if avatar:
         log.info("avatar session %s %s", avatar["id"], avatar["status"])
 
     room = rtc.Room()
-    controller: ExamController | None = None
     realtime: RealtimeClient | None = None
+    current: ExamController | None = None  # the exam in progress, or the next one waiting for Start
     try:
         await room.connect(os.environ["LIVEKIT_URL"], livekit_token(room_name, AGENT_IDENTITY))
         log.info("agent joined room %s (avatar=%s)", room_name, USE_AVATAR)
@@ -156,22 +160,48 @@ async def run(session_id: str) -> None:
             await output.start()
 
         async def on_event(kind, event):
-            if controller:
-                await controller.on_realtime_event(kind, event)
+            if current:
+                await current.on_realtime_event(kind, event)
 
         realtime = RealtimeClient(REALTIME_URL, BOSON_KEY, on_event)
-        controller = ExamController(config, realtime, output, LiveKitUI(room), slog, Director(config), factcheck=FACTCHECK)
+
+        def new_exam() -> ExamController:
+            slog = SessionLog(HERE / "runs" / f"{room_name}-{time.strftime('%Y%m%d-%H%M%S')}.jsonl")
+            return ExamController(config, realtime, output, LiveKitUI(room), slog, Director(config), factcheck=FACTCHECK)
+
+        current = new_exam()
         await realtime.connect(realtime_session(config))
 
+        async def reset(reason: str) -> None:
+            """Abort the exam in progress and get a fresh one ready (new Higgs conversation, new log)."""
+            nonlocal current
+            if current is None or current.phase == "waiting":
+                return
+            log.info("resetting the exam: %s", reason)
+            old = current
+            await old.abort()
+            await old.aclose()
+            await realtime.close()  # the next Start reconnects with an empty conversation
+            current = new_exam()
+
         async def forward(track):
-            async for event in rtc.AudioStream(track, sample_rate=24000, num_channels=1):
-                await controller.on_presenter_audio(event.frame)
+            try:
+                async for event in rtc.AudioStream(track, sample_rate=24000, num_channels=1):
+                    if current:
+                        await current.on_presenter_audio(event.frame)
+            except Exception:
+                log.exception("presenter audio forwarding stopped")
 
         @room.on("track_subscribed")
         def on_track(track, _publication, participant):
             if participant.identity not in (AVATAR_IDENTITY, AGENT_IDENTITY) and track.kind == rtc.TrackKind.KIND_AUDIO:
                 log.info("listening to %s", participant.identity)
                 asyncio.create_task(forward(track))
+
+        @room.on("participant_disconnected")
+        def on_left(participant):
+            if participant.identity not in (AVATAR_IDENTITY, AGENT_IDENTITY):
+                asyncio.create_task(reset(f"{participant.identity} left the room"))
 
         for participant in room.remote_participants.values():
             for publication in participant.track_publications.values():
@@ -180,18 +210,35 @@ async def run(session_id: str) -> None:
 
         async def read_ctl(reader, _identity):
             try:
-                await controller.on_ctl(json.loads(await reader.read_all()))
+                msg = json.loads(await reader.read_all())
+                if msg.get("type") == "start" and current.phase != "waiting":
+                    await reset("Start pressed again")  # e.g. the page was reloaded
+                await current.on_ctl(msg)
             except (json.JSONDecodeError, KeyError, ValueError) as exc:
                 log.warning("bad viva.ctl message: %s", exc)
+            except Exception:
+                log.exception("viva.ctl handling failed")
 
         room.register_text_stream_handler("viva.ctl", lambda reader, identity: asyncio.ensure_future(read_ctl(reader, identity)))
         log.info("ready: waiting for the presenter's {type: start}")
-        await controller.ended.wait()
-        await asyncio.sleep(1.0)  # let the last viva.ui messages go out
+
+        # One exam after another until Ctrl-C. Only completed exams are uploaded for the scorecard.
+        while True:
+            exam = current
+            await exam.ended.wait()
+            if exam.completed:
+                await asyncio.sleep(1.0)  # let the last viva.ui messages go out
+                exam.slog.upload(SERVER, room_name)
+                await exam.aclose()
+                await realtime.close()
+                current = new_exam()
+                log.info("exam complete; ready for the next Start")
+            else:
+                while current is exam:  # aborted: reset() is swapping in the next exam
+                    await asyncio.sleep(0.1)
     finally:
-        if controller:
-            await controller.aclose()
-            slog.upload(SERVER, room_name)
+        if current:
+            await current.aclose()
         if realtime:
             await realtime.close()
         if avatar:

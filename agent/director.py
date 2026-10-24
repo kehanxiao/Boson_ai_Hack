@@ -26,11 +26,12 @@ SCHEMA = {
             "type": "string",
             "enum": ["none", "question_closed", "question_open", "comment_negative", "comment_positive", "factcheck"],
         },
+        "severity": {"type": "string", "enum": ["major", "minor"]},
         "reason": {"type": "string"},
         "cue": {"type": "string"},
         "claim": {"type": "string"},
     },
-    "required": ["action", "kind", "reason", "cue", "claim"],
+    "required": ["action", "kind", "severity", "reason", "cue", "claim"],
     "additionalProperties": False,
 }
 
@@ -39,6 +40,7 @@ SCHEMA = {
 class Decision:
     action: str
     kind: str
+    severity: str  # "major" interrupts the talk; "minor" waits for the questions
     reason: str
     cue: str
     claim: str
@@ -50,11 +52,14 @@ class Director:
         self.config = config
         self.client = AsyncAnthropic()
         character = config["character"]
+        minor_ok = int(character.get("strictness", 3)) >= 5  # same rule as exam.interrupts_on_minor
         # Stable across the session, so it goes first (cacheable prefix).
         self.system = "\n\n".join([
             (PROMPTS / "director.md").read_text(encoding="utf-8").strip(),
             f"Examiner character: {character['name']}. {character.get('persona', '')} "
-            f"Interruption rate: {character.get('interrupt_rate', 'medium')}; strictness {character.get('strictness', 3)}/5.",
+            f"Interruption rate: {character.get('interrupt_rate', 'medium')}; strictness {character.get('strictness', 3)}/5. "
+            + ("This examiner is strict enough to interrupt for minor issues too."
+               if minor_ok else "This examiner interrupts only for major issues."),
             "Slides:\n" + slide_digest(config),
         ])
 
@@ -84,6 +89,7 @@ class Director:
         return Decision(
             action=data.get("action", "none"),
             kind=data.get("kind", "none"),
+            severity=data.get("severity", "minor"),
             reason=data.get("reason", ""),
             cue=data.get("cue", ""),
             claim=data.get("claim", ""),

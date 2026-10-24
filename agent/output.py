@@ -28,7 +28,7 @@ class AvatarOutput:
         self._out.on("playback_finished", self._finished)
 
     def on_finished(self, cb: Finished) -> None:
-        self._callbacks.append(cb)
+        self._callbacks = [cb]  # one exam controller at a time: a new exam replaces the old callback
 
     def _finished(self, event) -> None:
         for cb in self._callbacks:
@@ -104,7 +104,7 @@ class VoiceOutput:
         await self.room.local_participant.publish_track(track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE))
 
     def on_finished(self, cb: Finished) -> None:
-        self._playback.callbacks.append(cb)
+        self._playback.callbacks = [cb]  # one exam controller at a time
 
     async def capture(self, pcm: bytes) -> None:
         self._playback.add(len(pcm) / (RATE * 2))
@@ -125,7 +125,7 @@ class SimulatedOutput:
         self._playback = _Playback()
 
     def on_finished(self, cb: Finished) -> None:
-        self._playback.callbacks.append(cb)
+        self._playback.callbacks = [cb]  # one exam controller at a time
 
     async def capture(self, pcm: bytes) -> None:
         self._playback.add(len(pcm) / (RATE * 2))

@@ -65,6 +65,15 @@
    - The examiner holds the floor, presses with follow-ups and keeps strict time.
    - It doesn't over-praise and doesn't apologise for asking.
    - Default character: demanding but fair. Harsher characters are optional.
+   - **Character drives the examiner's behaviour.** How often she interrupts, and for what, comes from the character, not from hard-coded rules. For the final version, tune the characters rather than the code:
+
+     | Field | Controls (agent) | Current values |
+     |---|---|---|
+     | `interrupt_rate` | spacing between interruptions; Q&A patience before replying | low 45 s / 1.6 s · medium 30 s / 1.3 s · high 20 s / 1.0 s |
+     | `strictness` | whether **minor** issues can interrupt the talk (the director labels each issue major or minor) | ≥ 5 (The Skeptic): minor too · < 5: major only, minor saved for Q&A |
+     | `persona` | tone, phrasing, which questions she favours | free text (presets + custom) |
+
+     The fixed rules for every character: no interruptions in the first 20 s, at most one per slide, fact-checks ≥ 10 s apart, hold the floor 1.5 s. The numbers live in `agent/exam.py`.
 6. **Code-switching.** In Q&A the presenter may answer in Indonesian or Mandarin mid-sentence. The examiner follows and continues in the session's language; a character can also be set to examine in Indonesian. Mostly prompt work, checked in K5.
 7. **Live web fact-check.** Declare the server-executed `{"type":"web_search"}` tool. The examiner says "let me check that" and verifies a claim. Skip `executor:"server"` calls in our tool handler, the way the tutorial's `livekit/server_tools.py` does.
 

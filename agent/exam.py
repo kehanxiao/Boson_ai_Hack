@@ -34,10 +34,16 @@ NO_INTERJECTION_BEFORE_S = 20
 ACK_SILENCE_S = 1.0  # going quiet this long after a reminder counts as acknowledging it
 IGNORE_AFTER_S = 3.5  # still talking this long after a reminder means it was ignored
 
+STT_PLACEHOLDER = "the transcription is not available"  # seen live from higgs-stt-3.1 when it fails
 ACK_WORDS = re.compile(r"\b(okay|ok|noted|yes|yep|got it|sure|understood|right|thanks|thank you|baik|oke|siap)\b", re.I)
 ACK_CJK = ("好的", "明白", "知道")
 URL = re.compile(r"https?://[^\s)\]>\"']+")
 INDONESIAN = re.compile(r"\b(saya|kami|kita|tidak|belum|sudah|bisa|itu|ini|yang|dengan|untuk|karena|tapi|jujur|apakah|waktu)\b", re.I)
+
+
+def interrupts_on_minor(character: dict) -> bool:
+    """Only the strictest characters (strictness 5, e.g. The Skeptic) cut in for minor issues too."""
+    return int(character.get("strictness", 3)) >= 5
 
 
 def guess_lang(text: str) -> str:
@@ -59,15 +65,18 @@ class ExamController:
         self.factcheck_enabled = factcheck
         self.reminder_before_s = reminder_before_s
 
+        # The character drives interruption behaviour (PLAN.md "Character drives the examiner's behaviour").
         character = config["character"]
         self.cooldown = COOLDOWN_S.get(character.get("interrupt_rate", "medium"), 30)
         self.patience = PATIENCE_S.get(character.get("interrupt_rate", "medium"), 1.3)
+        self.minor_ok = interrupts_on_minor(character)
         self.last_slide = max((s["index"] for s in config.get("slides", [])), default=1)
 
         self.phase = "waiting"
         self.slide = 1
         self.started = 0.0
         self.ended = asyncio.Event()
+        self.completed = False  # True only when the exam reached its verdict (abort() leaves it False)
         self.vad = PauseDetector(self.on_speech_start, self.on_pause, min_silence=VAD_SILENCE_S)
 
         # Presenter state
@@ -175,6 +184,8 @@ class ExamController:
                 await self.enter_debrief()
 
     async def on_presenter_audio(self, frame) -> None:
+        if self.phase in ("waiting", "ended") or not self.realtime.connected:
+            return  # nothing to hear before Start; and never write to a closed connection
         await self.realtime.append(bytes(frame.data))
         self.vad.push(frame)
         if self.presenter_speaking and time.monotonic() - self.last_commit > MAX_CHUNK_S:
@@ -228,8 +239,8 @@ class ExamController:
     async def on_transcript(self, text: str) -> None:
         meta = self.commits.popleft() if self.commits else {"slide": self.slide, "pause_at": time.monotonic()}
         text = text.strip()
-        if not text:
-            return
+        if not text or text.lower().startswith(STT_PLACEHOLDER):
+            return  # nothing said, or the STT service's placeholder when it fails
         lang = guess_lang(text)
         entry = self.slog.write("chunk", slide=meta["slide"], lang=lang, text=text)
         await self.ui.publish({"type": "caption", "role": "presenter", "text": text, "lang": lang, "t": entry["t"]})
@@ -284,8 +295,22 @@ class ExamController:
             item = event.get("item", {})
             if item.get("type") == "function_call_output" and self.factcheck is not None:
                 self.factcheck["sources"] = list(dict.fromkeys(URL.findall(item.get("output", ""))))[:3]
-        elif kind == "connection.closed":
-            self.ended.set()
+        elif kind == "connection.closed" and self.phase in ("presentation", "qa", "debrief"):
+            self._spawn(self._reconnect())
+
+    async def _reconnect(self) -> None:
+        """Mid-exam drop: reconnect and carry on. The conversation history is lost, so re-seed context."""
+        await asyncio.sleep(0.5)
+        try:
+            if await self.realtime.ensure_connected():
+                self._requested, self._current = None, None
+                if self.phase != "presentation":
+                    await self.realtime.update_instructions(prompts.for_phase(self.config, self.phase, self.interjections))
+                await self.realtime.add_note(f"[Context note: the connection was restored. The {self.phase} phase is under "
+                                             f"way and the presenter is on slide {self.slide}. Continue the exam.]")
+        except Exception as exc:
+            log.error("realtime reconnect failed: %s", exc)
+            await self.finish()
 
     # ------------------------------------------------------------------ playback
     async def _playback_finished(self, played: float, interrupted: bool) -> None:
@@ -323,6 +348,9 @@ class ExamController:
 
     # ------------------------------------------------------------------ presentation
     async def begin(self) -> None:
+        # The server closes a Realtime session after 5 idle minutes, so the one opened at launch
+        # may be gone by the time the presenter presses Start.
+        await self.realtime.ensure_connected()
         self.phase = "presentation"
         self.started = time.monotonic()
         self.slog.start()
@@ -388,11 +416,13 @@ class ExamController:
                 self._spawn(self.maybe_direct(*nxt))
         if d is None:
             return
-        self.slog.write("director", action=d.action, reason=d.reason, cue=d.cue, ms=d.ms)
-        log.info("director %s (%d ms): %s", d.action, d.ms, d.cue or d.reason)
+        self.slog.write("director", action=d.action, severity=d.severity, reason=d.reason, cue=d.cue, ms=d.ms)
+        log.info("director %s/%s (%d ms): %s", d.action, d.severity, d.ms, d.cue or d.reason)
         interject_ok, factcheck_ok = self._allowed(meta["slide"])  # state may have moved on during the call
         if (d.action == "interject" and not interject_ok) or (d.action == "factcheck" and not factcheck_ok):
             return
+        if d.action == "interject" and d.severity != "major" and not self.minor_ok:
+            return  # this character keeps minor points for the questions
         if d.action == "none" or self.phase != "presentation" or self.engaged or self._reminder_open():
             return
         await self.interject(d, meta)
@@ -537,9 +567,21 @@ class ExamController:
         await self.say("verdict", "Give your verdict now in at most three sentences: one genuine strength, the biggest "
                        "weakness, and one concrete fix. Start with the word Verdict.", max_tokens=160)
 
+    async def abort(self) -> None:
+        """The presenter left or restarted: stop everything at once (the log is kept locally)."""
+        if self.phase == "ended":
+            return
+        self.phase = "ended"
+        for task in list(self._tasks):
+            task.cancel()
+        await self.realtime.cancel()
+        self.output.clear()
+        self.ended.set()
+
     async def finish(self) -> None:
         if self.phase == "ended":
             return
+        self.completed = True
         self.phase = "ended"
         self.slog.write("phase", phase="end")
         await self.ui_state("ended")

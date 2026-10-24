@@ -17,6 +17,7 @@ import time
 from typing import Awaitable, Callable
 
 import websockets
+from websockets.protocol import State
 
 log = logging.getLogger("viva.realtime")
 
@@ -37,12 +38,29 @@ class RealtimeClient:
         self._pending_commit = False
         self._uncommitted = 0  # bytes appended since the last commit
         self._awaiting_created = False
+        self._session: dict = {}
         self._reader: asyncio.Task | None = None
 
     async def connect(self, session: dict) -> None:
+        self._session = session
         self.ws = await websockets.connect(self.url, additional_headers=self.headers, max_size=None)
         await self.send({"type": "session.update", "session": session})
         self._reader = asyncio.create_task(self._read())
+
+    @property
+    def connected(self) -> bool:
+        return self.ws is not None and self.ws.state == State.OPEN
+
+    async def ensure_connected(self) -> bool:
+        """Reconnect with the same session config if the server closed us (e.g. its 5-minute idle
+        timeout while waiting for the presenter). Returns True if a new connection was made."""
+        if self.connected:
+            return False
+        log.warning("realtime: reconnecting")
+        self.response_active = self.server_tool_pending = self._pending_commit = self._awaiting_created = False
+        self._uncommitted = 0
+        await self.connect(self._session)
+        return True
 
     async def close(self) -> None:
         if self._reader:
@@ -51,7 +69,10 @@ class RealtimeClient:
             await self.ws.close()
 
     async def send(self, event: dict) -> None:
-        await self.ws.send(json.dumps(event))
+        try:
+            await self.ws.send(json.dumps(event))
+        except websockets.ConnectionClosed:
+            log.warning("realtime: dropped %s (connection closed)", event.get("type"))
 
     async def append(self, pcm: bytes) -> None:
         self._uncommitted += len(pcm)
@@ -129,9 +150,12 @@ class RealtimeClient:
                 if kind != "response.output_audio.delta":
                     self._log(kind, event)
                 await self.on_event(kind, event)
-        except websockets.ConnectionClosed as closed:
-            log.warning("realtime connection closed: %s", closed)
-            await self.on_event("connection.closed", {"code": closed.code})
+        except websockets.ConnectionClosed:
+            pass
+        # A normal close (code 1000, e.g. the idle timeout) ends the loop without raising.
+        close = getattr(self.ws, "close_reason", None) or ""
+        log.warning("realtime connection closed: %s %s", getattr(self.ws, "close_code", None), close)
+        await self.on_event("connection.closed", {"code": getattr(self.ws, "close_code", None), "reason": close})
 
     def _track(self, kind: str, event: dict) -> None:
         if kind == "response.created":
