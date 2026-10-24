@@ -14,7 +14,15 @@ A hand-built worker: joins the LiveKit room, starts a Higgs Avatar session, and 
     - The exception is an exchange: after she cuts in, the presenter's next pauses for 20 s are a reply, judged after an extra `REPLY_PATIENCE_S` (0.9 s) of silence.
     - An exchange allows up to `follow_ups` replies: 1, or 2 for strictness 5. Then the brain is told to let the point go until Q&A.
     - Q&A: at each pause after the patience delay, or after 8 s of silence. At least `MIN_QA_QUESTIONS` (2) before END.
-  - **The brain learns each slide when it is shown** (summary and weak points in the slide note). It sees the full digest only in Q&A. Knowing every slide up front, it raised later slides' claims early.
+  - **The brain learns a slide's summary and weak points only after the presenter has spoken `SLIDE_SETTLE_S` (5 s) on it** (`_maybe_reveal`). The switch itself is just "[Slide N is showing now.]", and a slide it already knows is revealed at once. It sees the full digest only in Q&A.
+    - Knowing every slide up front, it raised later slides' claims early.
+    - Told the slide's weak points at the switch, it said "You say bug-free…" 0.6 s after one (live run, Sat 04:28).
+    - Delaying the *asking* instead lost claims made just before a click.
+  - **Her words for the brain go in the past tense, at the moment the room hears them** ("[She starts speaking now. …] [She said: "…"]"). Told she was "about to say" something, the brain repeated it as its own line.
+  - **Replies:** the extra patience applies only to the first `REPLY_START_S` (3 s) of a reply. A fluent presenter otherwise cancelled every delayed ask for the whole exchange.
+  - **Time reminders and the escalation keep trying for up to ~30 s and ~10 s.** A 25 s web search used to swallow the reminder.
+  - **A pause in a quiet window or the gap is judged when that ends** (`_gap_pending`), not dropped ("May I continue now?" after a reminder).
+  - **An untagged spoken line is taken as SAY**, or as CHECK if it announces a look-up. This is logged, and `parse()` stays strict.
   - **Never the same point a third time** (`said`, word overlap). Lines of 5 words or fewer are exempt ("Yes, go on."), and a cut-off line counts toward the follow-ups.
   - **She is "speaking" only while the room hears her** (`output.on_started` → `audible_at`, until playback finishes). The avatar reports `lk.playback_started` (`wait_playback_start=True`), or the start is estimated at 1.3 s after the first captured audio. The floor-hold, talked-over detection and the brain's order all use this clock.
     - **The brain's order:** `brain.mark()` commits the audio so far, then adds "[She starts speaking now.]" or "[She has finished speaking.]". When a decision is being written, the note waits behind the queued commit.

@@ -24,7 +24,7 @@ import time
 from collections import deque
 
 import instructions as prompts
-from brain import Brain, Decision
+from brain import LOOKUP, Brain, Decision
 from vad import PauseDetector
 
 log = logging.getLogger("viva.exam")
@@ -36,7 +36,15 @@ VAD_SILENCE_S = 0.6  # pause length that triggers a commit
 GAP_S = {"high": 3, "medium": 4, "low": 8}
 # When the presenter is replying to her, a 0.6 s pause is often mid-thought ("Because." ... ): wait this much longer.
 REPLY_PATIENCE_S = 0.9
+# ...but only at the start of a reply, where thinking pauses are. A presenter who carries on fluently (gaps under
+# 1.5 s) cancelled every delayed ask, so the brain heard nothing for the whole exchange (sim, Sat 05:10).
+REPLY_START_S = 3.0
 PRESSED_QUIET_S = 8
+# The brain learns a new slide's content and weak points only once the presenter has spoken this long on it.
+# Told them at the switch, she challenged them 0.6 s and 4 s later, before the presenter had made the claim
+# ("You say bug-free..." live run, Sat 04:28). Delaying the asking instead (sim, Sat 05:12) lost claims made just
+# before a click: the pause landed on the new slide.
+SLIDE_SETTLE_S = 5.0
 # While she is heard, the presenter's speech is held back from the brain: a short overlap (trailing off, a reflex
 # "yeah") is dropped when she finishes, and only a real talk-over (barge-in) is passed on. Taken as their answer,
 # overlap made her react to words said while she was talking (live run, Sat 04:30).
@@ -143,6 +151,10 @@ class ExamController:
         self.pause_at: float | None = None  # when the latest pause was detected
         self.silent_since: float | None = None
         self.last_speech_start = 0.0
+        self.slide_changed_at = 0.0
+        self.slide_speech = 0.0  # presenter speech on the current slide, finished stretches only
+        self.revealed: set[int] = set()  # slides whose content and weak points the brain has been given
+        self.reply_speech = 0.0  # presenter speech since her last utterance finished
         self.chunk_started_at = 0.0  # when the speech in the current chunk began
         self.last_commit = 0.0
         self.chunk_slide = 1  # slide showing when the current chunk of speech began
@@ -332,6 +344,8 @@ class ExamController:
                 self._spawn(self._maybe_barge_in(self.last_speech_start))
 
     async def on_pause(self) -> None:
+        self.slide_speech += max(0.0, time.monotonic() - VAD_SILENCE_S - max(self.last_speech_start, self.slide_changed_at))
+        self.reply_speech += max(0.0, time.monotonic() - VAD_SILENCE_S - max(self.last_speech_start, self.last_spoke_end))
         self.presenter_speaking = False
         self.pause_at = time.monotonic()
         self.silent_since = self.pause_at - VAD_SILENCE_S
@@ -339,8 +353,9 @@ class ExamController:
         slide = self.chunk_slide
         await self._commit()  # queued by the client if a response is being generated
         if self.phase == "presentation":
+            await self._maybe_reveal()  # before the brain judges this pause
             ctx = {"phase": "presentation", "pause_at": self.pause_at, "slide": slide}
-            if self._in_exchange():
+            if self._in_exchange() and self.reply_speech < REPLY_START_S:
                 if self.qa_turn:
                     self.qa_turn.cancel()
                 self.qa_turn = self._spawn(self._ask_after(REPLY_PATIENCE_S, ctx))  # cancelled if they go on
@@ -355,10 +370,11 @@ class ExamController:
         if index == self.slide:
             return
         self.slide = index
+        self.slide_changed_at, self.slide_speech = time.monotonic(), 0.0
         self.slog.write("slide", index=index)
         summary = next((s.get("summary", "") for s in self.config.get("slides", []) if s["index"] == index), "")
         await self.realtime.add_note(f"[Context note: the presenter moved to slide {index}. {summary}]")
-        await self.note(self._slide_note(index))
+        await self.note(self._slide_note(index) if index in self.revealed else f"[Slide {index} is showing now.]")
         if self.reminder and not self.reminder["acked"] and index == self.last_slide:
             await self.acknowledge("slide_jump")
 
@@ -429,12 +445,8 @@ class ExamController:
             if text:
                 if self._current is not None:
                     self._current["text"] = text
-                    if not self._current.get("line"):
-                        # Words the brain didn't write (greeting, reminders, a search result). Generated now,
-                        # heard later: the brain gets "[She starts speaking now.]" when the room hears it.
-                        how = ("is about to tell them what she found" if self._current["kind"] == "factcheck_answer"
-                               else "is about to say")
-                        await self.note(f'[She {how}: "{text}"]')
+                    if not self._current.get("line") and self._current.get("audible_at") and self.brain_ok:
+                        await self.note(self._her_words(self._current))  # heard before its transcript was done
                 entry = self.slog.write("examiner", slide=self.slide, text=text)
                 await self.ui.publish({"type": "caption", "role": "examiner", "text": text, "t": entry["t"]})
         elif kind == "conversation.item.input_audio_transcription.completed":
@@ -504,6 +516,17 @@ class ExamController:
         x = self.exchange
         return bool(x and time.monotonic() < x["until"] and x["depth"] < self.follow_ups)
 
+    def _slide_speech(self) -> float:
+        """How long the presenter has talked on the current slide, including a stretch still under way."""
+        ongoing = time.monotonic() - max(self.last_speech_start, self.slide_changed_at) if self.presenter_speaking else 0.0
+        return self.slide_speech + max(0.0, ongoing)
+
+    async def _maybe_reveal(self) -> None:
+        """Give the brain the current slide's content once the presenter has talked about it for a while."""
+        if self.slide not in self.revealed and self._slide_speech() >= SLIDE_SETTLE_S:
+            self.revealed.add(self.slide)
+            await self.note(self._slide_note(self.slide))
+
     def _may_cut_in(self) -> bool:
         """Presentation: ask the brain at this pause? Not while she speaks, and not right after she has spoken,
         unless the presenter is replying to her."""
@@ -560,8 +583,9 @@ class ExamController:
         if d.action == "INVALID" and len(d.text.split()) >= 2 and not d.text.startswith("["):
             # A spoken line without its tag: seen as "Let me finish, please. You haven't answered..." after a
             # talk-over note (sims, Sat 04:55). parse() stays strict so the probes still count format slips.
-            log.info("brain: untagged line taken as SAY")
-            d = Decision("SAY", d.text.strip('"'), d.ms, d.ctx, d.raw)
+            action = "CHECK" if LOOKUP.search(d.text) else "SAY"  # as parse() does for a tagged SAY
+            log.info("brain: untagged line taken as %s", action)
+            d = Decision(action, d.text.strip('"'), d.ms, d.ctx, d.raw)
         if d.action in ("SILENT", "INVALID") or not d.text:
             if reask:
                 await self._ask_brain(*reask)  # audio that arrived during that decision
@@ -637,6 +661,11 @@ class ExamController:
                                                        reply=u.get("reply", False), retried=True):
             await self._utterance_finished(u, interrupted=False)
 
+    def _her_words(self, u: dict) -> str:
+        u["told"] = True
+        how = "She looked it up and told them" if u["kind"] == "factcheck_answer" else "She said"
+        return f'[{how}: "{u["text"]}"]'
+
     # ------------------------------------------------------------------ playback
     async def _playback_started(self, estimated: bool) -> None:
         """The room starts hearing her next utterance: her floor-hold, being talked over, and the brain's sense
@@ -655,8 +684,11 @@ class ExamController:
         if u.get("hold"):
             self.hold_until = now + HOLD_S
         if self.brain_ok:
+            # Words the brain didn't write (greeting, reminders, a search result) go with it, in the past tense:
+            # told she was "about to say" them, the brain repeated them as its own line (sim, Sat 05:25).
+            words = "" if u.get("line") or not u.get("text") else " " + self._her_words(u)
             await self.brain.mark("[She starts speaking now. What the presenter said before this, they said "
-                                  "before they could hear her.]")
+                                  "before they could hear her.]" + words)
         self.overlap.clear()
         self.overlap_released = False
         if self.presenter_speaking and u["kind"] in BARGEABLE:
@@ -689,6 +721,7 @@ class ExamController:
     async def _utterance_finished(self, u: dict, interrupted: bool, played: float = 0.0) -> None:
         kind, now = u["kind"], time.monotonic()
         self.last_spoke_end = now
+        self.reply_speech = 0.0
         text = u.get("text") or u.get("line") or ""
         talked_over = interrupted and kind in BARGEABLE and text and played > 0
         if talked_over:
@@ -766,7 +799,7 @@ class ExamController:
         self.slog.start()
         self.slog.write("phase", phase="presentation")
         self.slog.write("slide", index=self.slide)
-        await self.note("[The exam starts now.] " + self._slide_note(self.slide))
+        await self.note(f"[The exam starts now. Slide {self.slide} is showing.]")
         self._spawn(self._greet())
         self._spawn(self._timer())
         self._spawn(self._watchdog())
@@ -802,6 +835,8 @@ class ExamController:
                 await self._utterance_finished(u, interrupted=False)
             if self.brain:
                 self.brain.check_stuck()
+            if self.phase == "presentation":
+                await self._maybe_reveal()  # during long unbroken speech too
             if self._gap_pending and not self.presenter_speaking and self._may_cut_in():
                 ctx, self._gap_pending = self._gap_pending, None
                 await self._ask_brain({**ctx, "pause_at": now})
@@ -831,11 +866,13 @@ class ExamController:
         if kind == "t_minus_2":
             self.reminder = {"kind": kind, "played_at": None, "escalated": False, "acked": False,
                              "issued": time.monotonic()}
-        for _ in range(3):
+        for _ in range(30):  # a web search can hold the floor for 25 s: keep trying (sim, Sat 05:25)
+            if self.phase != "presentation":
+                return
             if await self.say("time_up" if kind == "time_up" else "reminder", f"Give a time reminder. Say only: \"{words}\"",
                               hold=True, max_tokens=40):
                 return
-            await self.wait_idle(timeout=4)
+            await self.wait_idle(timeout=1)
 
     async def _watch_ack(self, r: dict) -> None:
         """After a reminder has played: silence or an acknowledging phrase counts; talking on does not."""
@@ -865,9 +902,13 @@ class ExamController:
         self.slog.write("escalation", **{"for": r["kind"]})
         await self.ui.publish({"type": "reminder", "kind": r["kind"], "acknowledged": False})
         minutes = max(1, round(self.reminder_before_s / 60))
-        await self.say("escalation", "The presenter ignored your time reminder and kept talking. Cut in firmly and hold "
-                       f"the floor. Say: \"Let me stop you there. You have under {minutes} minute{'s' if minutes > 1 else ''}. "
-                       "Move to your conclusion.\"", hold=True, max_tokens=60)
+        for _ in range(10):
+            if self.phase != "presentation" or await self.say(
+                    "escalation", "The presenter ignored your time reminder and kept talking. Cut in firmly and hold "
+                    f"the floor. Say: \"Let me stop you there. You have under {minutes} minute{'s' if minutes > 1 else ''}. "
+                    "Move to your conclusion.\"", hold=True, max_tokens=60):
+                return
+            await self.wait_idle(timeout=1)
 
     # ------------------------------------------------------------------ Q&A
     async def enter_qa(self) -> None:

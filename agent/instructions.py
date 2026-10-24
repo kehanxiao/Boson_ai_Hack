@@ -148,8 +148,9 @@ def brain(config: dict, phase: str) -> str:
     if phase == "presentation":
         # One slide at a time, as it is shown: knowing every slide's weak points from the start, the brain raised
         # claims from later slides before the presenter had made them ("You said bug-free..." on slide 5).
-        parts.append("Each slide's content and weak points come in a note when the presenter shows it. Judge what "
-                     "they say against the slides shown so far.")
+        parts.append("A note says when the presenter moves to a slide. Its content and weak points come in a second "
+                     "note once they have talked about it for a few seconds. Judge what they say against the slides "
+                     "you know so far.")
     else:
         parts.append("The slides:\n" + slide_digest(config))
     task = BRAIN_PHASES[phase]
