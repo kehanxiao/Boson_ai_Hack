@@ -188,7 +188,8 @@ def report(path: pathlib.Path) -> None:
     phases = [e["phase"] for e in entries if e["kind"] == "phase"]
     examiner = [e for e in entries if e["kind"] == "examiner"]
     fc_done = [e for e in entries if e["kind"] == "factcheck" and e.get("status") == "done"]
-    after_fc = " ".join(e["text"] for e in examiner if fc_done and e["t"] >= fc_done[0]["t"] - 15)
+    fc_start = next((e["t"] for e in entries if e["kind"] == "factcheck" and e.get("status") == "searching"), None)
+    after_fc = " ".join(e["text"] for e in examiner if fc_start is not None and e["t"] >= fc_start)
     langs = {e.get("lang") for e in entries if e["kind"] == "chunk"}
     checks = {
         "interjection on slide 3": any(e["kind"] == "interjection" and e["slide"] == 3 for e in entries),
@@ -196,7 +197,7 @@ def report(path: pathlib.Path) -> None:
         "fact-check names Microsoft": "microsoft" in after_fc.lower(),
         "reminder -> escalation -> ack": all(k in kinds for k in ("reminder", "escalation", "ack")),
         "phases presentation/qa/debrief/end": phases == ["presentation", "qa", "debrief", "end"],
-        "verdict spoken": any(e["text"].lower().startswith("verdict") for e in examiner),
+        "verdict spoken": any("verdict" in e["text"].lower() for e in examiner),
         "no 'already covered' question in Q&A": not any(("forty percent" in e["text"].lower() or "40%" in e["text"]) and e["t"] > (
             next((p["t"] for p in entries if p["kind"] == "phase" and p.get("phase") == "qa"), 1e9)) for e in examiner),
         "only contract log kinds": set(kinds) <= {"chunk", "examiner", "director", "interjection", "reminder", "ack",

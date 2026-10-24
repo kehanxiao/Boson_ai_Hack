@@ -133,7 +133,9 @@ def realtime_session(config: dict) -> dict:
             },
             "output": {"voice": config["character"].get("voice") or "default"},
         },
-        "max_output_tokens": 220,  # also caps the server's own follow-up after a web search
+        # Also caps the server's own follow-up after a web search, which ignores our per-response caps
+        # (at 220 a fact-check answer ran ~18 s in the sim).
+        "max_output_tokens": 120,
     }
     if FACTCHECK:
         session["tools"] = [{"type": "web_search"}]

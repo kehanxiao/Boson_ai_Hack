@@ -402,7 +402,8 @@ class ExamController:
             return
         if kind in ("interjection", "factcheck_answer") and self.phase == "presentation" and not interrupted:
             # The presenter owes an answer; the director judges it when it comes.
-            self.awaiting = {"since": time.monotonic(), "asked": self.last_examiner_text, "answer": []}
+            self.awaiting = {"since": time.monotonic(), "asked": self.last_examiner_text, "answer": [],
+                             "index": len(self.interjections) - 1}
         elif kind == "ack":
             self.awaiting = None
         await self.idle_state()
@@ -498,6 +499,10 @@ class ExamController:
             if not awaiting or self.awaiting is not awaiting or self.phase != "presentation":
                 return  # stale: that exchange is already over
             self.awaiting = None
+            # Record what they answered, so in Q&A she doesn't claim it was never addressed (seen in the sim).
+            if 0 <= awaiting.get("index", -1) < len(self.interjections) and awaiting["answer"]:
+                answer = " ".join(awaiting["answer"])[:200]
+                self.interjections[awaiting["index"]] += f" (they answered: \"{answer}\")"
             cue = d.cue or "Fine. Carry on."
             if self.presenter_speaking or self.engaged:
                 self.pending_ack = cue  # deliver it at their next pause
@@ -561,6 +566,7 @@ class ExamController:
         return bool(self.reminder and not self.reminder["acked"])
 
     async def remind(self, kind: str, words: str) -> None:
+        self.awaiting = self.pending_ack = None  # the reminder takes over the floor; no stale acknowledgement after it
         await self.wait_idle(timeout=8)
         self.slog.write("reminder", reminder=kind)
         await self.ui.publish({"type": "reminder", "kind": kind, "acknowledged": None})
