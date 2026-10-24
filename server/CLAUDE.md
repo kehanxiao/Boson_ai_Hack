@@ -41,3 +41,10 @@ Stack: uv, Python 3.11+, `fastapi`, `uvicorn`, `python-multipart`, `livekit-api`
 - **Character field:** `character` is a preset id. Optional free text (`custom_text`, or `character` itself when it isn't a preset id) is appended to the base preset's persona. With no preset given, the base is `supervisor`. `character.id` stays the base preset id. ⚠️ This is our reading of "`character` = preset id or `custom_text`"; confirm with A.
 - **Instructions** (`instructions.py`): `agent/prompts/examiner_base.md` if it exists, else a stand-in carrying A's K5 rules; then character + scenario + times + notes + support-doc excerpt (≤ 4000 chars) + a slide digest with weak points.
 - If a slide's Haiku call fails, that slide falls back to its own text and the session is still created. If rendering fails, the folder is removed and the request returns 500.
+
+## Scorecard (built Fri 23:30, `scorecard.py`)
+- `GET /api/sessions/{id}/scorecard`: on the first request it generates from `log.jsonl` + `config.json` (Haiku, adaptive thinking, effort `medium`; **13–17 s**), caches to `scorecard.json`, and later requests return the cached copy. 404 until the log is uploaded; 502 if generation fails (not cached, so a retry works). Uploading a new log deletes the cached scorecard. `demo` always returns `sample-scorecard.json`.
+- **Code owns what must be exact.** Quotes are checked against presenter log lines: `t`/`slide` come from the matching line, and quotes that aren't verbatim are dropped. `unacknowledged` moments come from `escalation` events (the presenter line between the reminder and the escalation). The four criteria names are fixed, scores are clamped to 1–5, and improvements are capped at 3.
+- Timing facts (time used vs. limit, reminder/escalation/ack times) are computed from the log and given to the model; it doesn't do the arithmetic.
+- Answering in another language never counts against the presenter (rule in the prompt; it was penalised before the rule).
+- CLI: `uv run python scorecard.py ../demo/sample-log.jsonl ../demo/session-config.json`.

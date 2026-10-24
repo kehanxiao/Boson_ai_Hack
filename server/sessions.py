@@ -4,13 +4,16 @@ session_id "demo" always works from the demo/ sample files.
 Creating a session (upload + prep) lives in session_create.py.
 """
 
+import asyncio
 import json
 from pathlib import Path
 
+import anthropic
 from fastapi import APIRouter, HTTPException, Path as PathParam, Request
 from fastapi.responses import FileResponse
 
 from config import DATA_DIR, DEMO_DIR
+from scorecard import ScorecardError, generate_scorecard, read_log
 
 router = APIRouter(prefix="/api/sessions")
 
@@ -62,8 +65,26 @@ async def upload_log(request: Request, session_id: str = SessionId) -> dict:
     return {"ok": True, "lines": len(lines)}
 
 
+_scorecard_locks: dict[str, asyncio.Lock] = {}
+
+
 @router.get("/{session_id}/scorecard")
-def get_scorecard(session_id: str = SessionId) -> dict:
+async def get_scorecard(session_id: str = SessionId) -> dict:
+    """Generated on first request from log.jsonl + config.json (~15-20 s), then cached to disk."""
     if session_id == "demo":
         return read_json(DEMO_DIR / "sample-scorecard.json")
-    return read_json(DATA_DIR / session_id / "scorecard.json")
+    session_dir = DATA_DIR / session_id
+    cached = session_dir / "scorecard.json"
+    async with _scorecard_locks.setdefault(session_id, asyncio.Lock()):  # one generation per session
+        if cached.exists():
+            return read_json(cached)
+        config = read_json(session_dir / "config.json")
+        if not (session_dir / "log.jsonl").exists():
+            raise HTTPException(404, "no session log yet: the agent uploads it when the session ends")
+        log = read_log((session_dir / "log.jsonl").read_text(encoding="utf-8"))
+        try:
+            card = await generate_scorecard(log, config)
+        except (ScorecardError, anthropic.APIError) as err:
+            raise HTTPException(502, f"scorecard generation failed, try again: {err}") from err
+        cached.write_text(json.dumps(card, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return card
