@@ -1,0 +1,21 @@
+{
+  "verdict": "A promising project with a real problem behind it, undermined by a likely target-leakage issue and an overclaimed deployment slide. The presenter recovered well under questioning.",
+  "criteria": [
+    {"name": "Clarity", "score_1_5": 3, "comment": "Clear story on slides 1-2; slide 6 was unreadable and ran long."},
+    {"name": "Rigour and evidence", "score_1_5": 2, "comment": "Headline claim lacked a baseline until challenged; possible target leakage not checked; LightGBM attribution wrong."},
+    {"name": "Handling questions", "score_1_5": 4, "comment": "Answered directly, admitted the leakage gap honestly, explained rolling-origin validation."},
+    {"name": "Time management", "score_1_5": 2, "comment": "Ignored the first two-minute reminder; needed an escalation before moving on."}
+  ],
+  "moments": [
+    {"t": 34.0, "slide": 3, "kind": "weak", "quote": "our model is forty percent better", "note": "Comparative claim with no baseline or metric until challenged."},
+    {"t": 39.4, "slide": 3, "kind": "strong", "quote": "the baseline is the hospital's current rolling average, and the metric is mean absolute error", "note": "Recovered with a precise answer."},
+    {"t": 98.0, "slide": 5, "kind": "weak", "quote": "LightGBM, which Google released in 2020", "note": "Factual error, corrected by fact-check: LightGBM is Microsoft's (around 2016)."},
+    {"t": 182.5, "slide": 6, "kind": "unacknowledged", "quote": "and the next group is holiday features", "note": "Kept talking through the two-minute reminder; escalation needed."},
+    {"t": 304.8, "slide": 8, "kind": "strong", "quote": "kami belum cek apakah waktu ke dokter itu masuk ke target, tapi kami bisa retrain tanpa fitur itu", "note": "Honest about the leakage gap and proposed a concrete fix (answered in Indonesian)."}
+  ],
+  "improvements": [
+    "Remove or justify 'time to first physician': confirm it is available at prediction time.",
+    "State the baseline and metric on the headline slide itself.",
+    "Cut slide 6 to the three most important features, with evidence of their importance."
+  ]
+}

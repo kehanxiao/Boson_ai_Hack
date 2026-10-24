@@ -1,0 +1,83 @@
+{
+  "session_id": "demo",
+  "scenario": "capstone_internship",
+  "time_limit_s": 300,
+  "qa_s": 120,
+  "notes": "Focus on evaluation methodology and whether the deployment claim is justified.",
+  "character": {
+    "id": "supervisor",
+    "name": "Dr. Claire Moreau, The Supervisor",
+    "persona": "A fair, experienced supervisor. Rigorous but constructive: interrupts when something matters, acknowledges strong points briefly, and pushes the presenter to reason out loud. Keeps strict time.",
+    "voice": "default",
+    "avatar_id": "builtin_claire_v1",
+    "interrupt_rate": "medium",
+    "strictness": 3
+  },
+  "instructions": "SAMPLE ONLY. The real text is assembled by server/prep.py from agent/prompts/examiner_base.md + character + scenario + slide digest.\n\nYou are Dr. Claire Moreau, examining a 5-minute MScAC internship project presentation, followed by 2 minutes of Q&A. You are the examiner, not an assistant: you hold the floor when you speak, you do not over-praise, you do not apologise for asking, and you keep strict time. Be rigorous and fair. Speak in short spoken sentences. Ask one question at a time. During the presentation, speak only when a cue tells you to interject; keep interjections to one or two sentences. In Q&A, the presenter may answer in Indonesian, Mandarin or mixed with English; follow them naturally, then continue in English. Use web search to check factual claims about the outside world.\n\nSlide digest:\n1 Title. 2 Problem: ER waits, forecast 4h ahead. 3 Claims 40% better with no baseline or metric. 4 Data: 1.2M visits; feature 'time to first physician' risks target leakage; outlier removal unexplained. 5 Method: LightGBM attributed to Google 2020 (factually wrong); rolling-window validation. 6 Dense feature list. 7 Claims Ontario-wide deployment readiness from one network. 8 Conclusion.",
+  "slides": [
+    {
+      "index": 1,
+      "image_url": "/api/sessions/demo/slides/1.png",
+      "summary": "Title slide: ERwait, forecasting ER wait times, MScAC internship project at a Toronto hospital network.",
+      "claims": [],
+      "weak_points": [],
+      "questions": []
+    },
+    {
+      "index": 2,
+      "image_url": "/api/sessions/demo/slides/2.png",
+      "summary": "Problem statement: long ER waits and patients leaving without being seen; goal is a 4-hour-ahead wait forecast per hospital.",
+      "claims": ["About 1 in 20 patients leave without being seen."],
+      "weak_points": ["Source for the 1-in-20 figure is not given."],
+      "questions": ["Who acts on a 4-hour forecast, and what decision changes?"]
+    },
+    {
+      "index": 3,
+      "image_url": "/api/sessions/demo/slides/3.png",
+      "summary": "Headline result: 'Our model is 40% better', with an unlabeled bar chart.",
+      "claims": ["The model is 40% better."],
+      "weak_points": ["No baseline is named.", "No metric is defined.", "Chart has no axis labels."],
+      "questions": ["40% better than what baseline, on which metric?", "Is that improvement on a held-out time period?"]
+    },
+    {
+      "index": 4,
+      "image_url": "/api/sessions/demo/slides/4.png",
+      "summary": "Data: two years of triage records, 1.2M visits; features include time to first physician; outliers removed.",
+      "claims": ["1.2M visits over two years.", "Outliers were removed."],
+      "weak_points": ["'Time to first physician' is part of the wait time, so this is likely target leakage.", "Outlier removal criteria are not explained."],
+      "questions": ["Is 'time to first physician' known at prediction time?", "How did you define an outlier, and how many visits did you drop?"]
+    },
+    {
+      "index": 5,
+      "image_url": "/api/sessions/demo/slides/5.png",
+      "summary": "Method: gradient-boosted trees with LightGBM, described as released by Google in 2020; rolling-window validation.",
+      "claims": ["LightGBM was released by Google in 2020.", "Rolling-window validation was used."],
+      "weak_points": ["Factual error: LightGBM was developed by Microsoft and open-sourced around 2016-2017."],
+      "questions": ["Why gradient boosting rather than a time-series model?", "How wide are the rolling windows?"]
+    },
+    {
+      "index": 6,
+      "image_url": "/api/sessions/demo/slides/6.png",
+      "summary": "Feature engineering: 14 dense bullets covering lags, holidays, weather, triage mix and staffing.",
+      "claims": ["14 engineered feature groups."],
+      "weak_points": ["Slide is text-crammed and unreadable.", "No feature importance shown."],
+      "questions": ["Which three features matter most, and how do you know?"]
+    },
+    {
+      "index": 7,
+      "image_url": "/api/sessions/demo/slides/7.png",
+      "summary": "Deployment: claims readiness for deployment across all Ontario hospitals.",
+      "claims": ["Ready for deployment across all Ontario hospitals."],
+      "weak_points": ["Validated on a single hospital network only; no external validation."],
+      "questions": ["What evidence supports generalising beyond one network?", "What happens when the forecast is wrong?"]
+    },
+    {
+      "index": 8,
+      "image_url": "/api/sessions/demo/slides/8.png",
+      "summary": "Conclusion and future work: recap and adding real-time bed data.",
+      "claims": [],
+      "weak_points": [],
+      "questions": ["If you had one more month, what would you validate first?"]
+    }
+  ]
+}
