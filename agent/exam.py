@@ -519,9 +519,10 @@ class ExamController:
 
     async def _ask_brain(self, ctx: dict, instructions: str | None = None, max_tokens: int | None = None) -> None:
         if ctx["phase"] == "presentation" and not self._may_cut_in():
-            if (self.phase == "presentation" and not self.engaged and self.brain_ok
-                    and time.monotonic() >= self.quiet_until):
-                self._gap_pending = ctx  # only the gap is in the way: judge it when the gap ends
+            if self.phase == "presentation" and not self.engaged and self.brain_ok:
+                # Only the gap or a quiet window is in the way: judge it when that ends. Dropped before, so "May I
+                # continue now?" right after a time reminder went unanswered (live run, Sat 04:26).
+                self._gap_pending = ctx
             return
         if not self.brain_ok:
             return
