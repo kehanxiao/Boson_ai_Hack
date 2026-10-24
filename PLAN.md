@@ -159,8 +159,11 @@ We chose it over the LiveKit Agents plugin because manual commits, `response.cre
   - `{type:"caption", role:"presenter"|"examiner", text, lang?, t}`
   - `{type:"interjection", slide, reason, t}`
   - `{type:"reminder", kind:"t_minus_2"|"time_up", acknowledged: true|false|null}`
-  - `{type:"factcheck", status:"searching"|"done", sources?}`
-  - `{type:"latency", metric, ms}`
+  - `{type:"factcheck", status:"searching"|"done", claim?, sources?}`. `claim` is the presenter's statement being checked, when known.
+  - `{type:"latency", metric, ms}`. Measured by the agent; the web side may add its own browser-side metrics.
+    - `pause_to_interjection`: local VAD detects the presenter's pause → first examiner audio frame sent to the avatar. Excludes avatar render and network.
+    - `cancel_to_silence`: agent decides to cancel (barge-in) → avatar `playback_finished` after `clear_buffer()`. Falls back to `response.done` if there's no playback event.
+    - `answer_end_to_reply`: Q&A, presenter's end of speech (VAD) → first examiner audio frame.
   - `{type:"ended", session_id}`
 
 **Server API (B builds, A consumes):**
@@ -170,7 +173,7 @@ We chose it over the LiveKit Agents plugin because manual commits, `response.cre
   - `{session_id, scenario, time_limit_s, qa_s, notes, instructions}`
   - `character: {id, name, persona, voice, avatar_id, interrupt_rate, strictness}`
   - `slides: [{index, image_url, summary, claims[], weak_points[], questions[]}]`
-- `POST /api/sessions/{id}/log`: the agent uploads its JSONL log at the end.
+- `POST /api/sessions/{id}/log`: the agent uploads its log at the end, as the **raw request body**. `Content-Type: application/x-ndjson`, one log object per line, exactly the `sample-log.jsonl` format. Response: `{ok: true, lines: N}`.
 - `GET /api/sessions/{id}/scorecard` → **Scorecard**:
   - `{verdict, criteria:[{name, score_1_5, comment}], improvements:[3]}`
   - `moments: [{t, slide, kind:"strong"|"weak"|"unacknowledged", quote, note}]`
