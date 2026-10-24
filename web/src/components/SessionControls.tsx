@@ -5,6 +5,8 @@ import type { LinkStatus } from '../lib/useVivaSession'
 interface Props {
   examiner: SessionView['examiner']
   status: LinkStatus
+  /** False when the session has no Q&A (qa_s 0): "Go to Q&A" would just end the exam. */
+  hasQa: boolean
   onStart: () => void
   onPhase: (phase: Phase) => void
 }
@@ -15,7 +17,7 @@ const PENDING: Partial<Record<LinkStatus, string>> = {
 }
 
 /** Start, then manual phase buttons (sent as viva.ctl phase messages). */
-export function SessionControls({ examiner, status, onStart, onPhase }: Props) {
+export function SessionControls({ examiner, status, hasQa, onStart, onPhase }: Props) {
   if (status !== 'running') {
     return (
       <button className="primary" onClick={onStart} disabled={status in PENDING}>
@@ -27,9 +29,11 @@ export function SessionControls({ examiner, status, onStart, onPhase }: Props) {
   const inPresentation = !done && examiner !== 'qa'
   return (
     <div style={{ display: 'flex', gap: 8 }}>
-      <button onClick={() => onPhase('qa')} disabled={!inPresentation}>
-        Go to Q&amp;A
-      </button>
+      {hasQa && (
+        <button onClick={() => onPhase('qa')} disabled={!inPresentation}>
+          Go to Q&amp;A
+        </button>
+      )}
       <button onClick={() => onPhase('end')} disabled={examiner === 'ended'}>
         End
       </button>

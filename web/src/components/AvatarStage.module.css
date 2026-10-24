@@ -37,6 +37,20 @@
   border: 1px solid var(--line);
 }
 
+.mode {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
 .stage figcaption {
   position: absolute;
   left: 0;

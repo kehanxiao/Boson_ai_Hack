@@ -7,10 +7,12 @@ interface Props {
   tracks: AvatarTracks
   character: Character
   speaking: boolean
+  /** SessionConfig.avatar === false: no avatar will join, so say so instead of looking like it's loading. */
+  voiceOnly: boolean
 }
 
 /** Video + audio of participant `boson-avatar`; a placeholder until the avatar joins (or in voice-only / fake mode). */
-export function AvatarStage({ tracks, character, speaking }: Props) {
+export function AvatarStage({ tracks, character, speaking, voiceOnly }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
 
@@ -45,6 +47,7 @@ export function AvatarStage({ tracks, character, speaking }: Props) {
           {initials}
         </div>
       )}
+      {voiceOnly && <span className={styles.mode}>Voice only</span>}
       <audio ref={audioRef} autoPlay />
       <figcaption>{character.name}</figcaption>
     </figure>

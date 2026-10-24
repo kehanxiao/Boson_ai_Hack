@@ -55,6 +55,7 @@ export function Session({ sessionId, fake, speed, autostart = false }: Props) {
           <SessionControls
             examiner={view.examiner}
             status={session.status}
+            hasQa={config.qa_s > 0}
             onStart={session.start}
             onPhase={(phase) => session.send({ type: 'phase', phase })}
           />
@@ -74,7 +75,7 @@ export function Session({ sessionId, fake, speed, autostart = false }: Props) {
           <SlideViewer slides={config.slides} index={slide} onChange={changeSlide} />
         </div>
         <aside className={styles.aside}>
-          <AvatarStage tracks={session.avatar} character={config.character} speaking={speaking} />
+          <AvatarStage tracks={session.avatar} character={config.character} speaking={speaking} voiceOnly={config.avatar === false} />
           <FactCheck factcheck={view.factcheck} now={now} />
           <Captions captions={view.captions} />
           {view.ended && (
