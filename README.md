@@ -20,7 +20,7 @@ Every AI is built to be your assistant. Practising a thesis defense, a capstone 
 | **Fact-checks on the web** | Checkable claims about the outside world ("LightGBM, released by Google in 2020") are verified with Higgs's server-side web search and corrected out loud. |
 | **Runs Q&A, in your language** | It asks questions from the weak points it found. You can answer in Indonesian or Mandarin, or mix them with English, and it follows you. |
 | **Scorecard** | A spoken verdict, then a page with scores for clarity, rigour, handling questions and time management, timestamped strong and weak moments quoting your own words, ignored reminders, and the top 3 improvements. |
-| **Custom examiner** | Three preset characters (The Skeptic, The Supervisor, The Industry Panelist), each with its own avatar, interruption rate and strictness, plus a free-text brief of your own. |
+| **Custom examiner** | Three preset characters (The Skeptic, The Supervisor, The Industry Panelist), each with its own avatar, interruption rate and strictness, plus a free-text brief of your own. The character, not hard-coded rules, decides how often she interrupts and for what. |
 
 ## How it uses Higgs
 - **Manual turn control** (`turn_detection: null`). Presenter audio streams continuously. Our own VAD commits a chunk at each breath, which gives a transcript **without** an automatic reply. We decide when the examiner speaks (`response.create` with per-response instructions carrying the director's cue). That is what makes interruptions, holding the floor and our own barge-in policy possible.
@@ -83,6 +83,8 @@ cd agent && uv run main.py <session_id>    # one agent per session
 3. Present. Use ← → or a presentation clicker to change slides. Use **Go to Q&A** and **End** to move between phases, or let the timer do it.
 4. When the session ends, open the scorecard. The first time, it takes about 15 s to write.
 
+After an exam, the agent stays in the room and waits for the next **Start**. Pressing Start again, or leaving the page, resets it to a fresh exam with a new log.
+
 **The built-in demo session** needs no upload: `uv run main.py demo`, then open http://localhost:5173/session/demo.
 **Voice-only** (no avatar slot used): `VIVA_AVATAR=0 uv run main.py <session_id>`.
 **Use a wired headset**: speakers feed the examiner's voice back into the mic.
@@ -111,7 +113,7 @@ cd agent && uv run main.py <session_id>    # one agent per session
 
 ## Known limitations
 - **Interruptions land at pauses, not mid-sentence.** The examiner cuts in at your next breath, typically **2–3.5 s** after the claim: VAD pause (0.6 s) + transcript (~0.4–1 s) + director (Claude Haiku, ~0.9–3.4 s, median ~2 s) + first audio (~0.45 s), plus avatar rendering.
-- **One interruption per cooldown.** To avoid nagging, the examiner waits 20–45 s between interjections (it depends on the character). It can spend that budget on a lesser weakness and let a bigger one pass: in one test it questioned an unsourced statistic and then stayed quiet on "40% better" a few seconds later.
+- **Limited interruptions, by design.** To avoid nagging, the examiner never interrupts in the first 20 s, at most once per slide, and waits 20–45 s between interjections, depending on the character. Only the strictest character (The Skeptic) interrupts for minor issues; the others save them for Q&A. Even so, it can use an interruption on one weakness and have to let a bigger one a few seconds later pass: in an early test it questioned an unsourced statistic and then stayed quiet on "40% better".
 - **The preview model's own turn-taking can't be switched on mid-session** (`turn_detection` is fixed at session start). Q&A therefore also runs on our manual turns: end-of-turn and barge-in come from our VAD and policy, not Higgs's built-in VAD.
 - **Speech-to-text:** short Indonesian phrases transcribe unreliably, so treat captions and scorecard quotes in Indonesian as approximate. STT occasionally invents a sentence from silence, and it can split a sentence at a breath (e.g. losing "percent better").
 - **Web-search follow-ups are sometimes unreliable** in wording or length. If the follow-up hasn't arrived after 12 s, the examiner gives the correction from memory instead.
