@@ -65,6 +65,7 @@ export interface SessionConfig {
   qa_s: number
   notes: string
   instructions: string
+  avatar?: boolean // false: voice only; missing means true
   character: Character
   slides: SlideInfo[]
 }

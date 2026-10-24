@@ -3,6 +3,7 @@
   "scenario": "capstone_internship",
   "time_limit_s": 300,
   "qa_s": 120,
+  "avatar": true,
   "notes": "Focus on evaluation methodology and whether the deployment claim is justified.",
   "character": {
     "id": "supervisor",

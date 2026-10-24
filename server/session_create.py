@@ -72,6 +72,7 @@ async def create_session(
     qa_s: int = Form(..., ge=0, le=1800),
     notes: str = Form("", max_length=2000),
     custom_text: str = Form("", max_length=2000),
+    avatar: bool = Form(True),
     support_doc: UploadFile | None = File(None),
 ) -> dict:
     if scenario not in SCENARIOS:
@@ -110,6 +111,7 @@ async def create_session(
         "time_limit_s": time_limit_s,
         "qa_s": qa_s,
         "notes": notes.strip(),
+        "avatar": avatar,
         "instructions": build_instructions(
             character=resolved,
             scenario=scenario,

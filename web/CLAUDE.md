@@ -7,7 +7,7 @@ Stack: Vite, React, TS, `livekit-client`, `@livekit/components-react`. Server ba
 ## Pages
 - **Setup:** the 5 inputs:
   1. scenario preset
-  2. character (presets from `demo/characters.json`, plus a custom text box)
+  2. character (presets from `demo/characters.json`, plus a custom text box), and face and voice or voice only (`avatar`)
   3. slides PDF + an optional support doc
   4. time limit + Q&A length
   5. notes

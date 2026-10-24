@@ -200,9 +200,10 @@ We chose it over the LiveKit Agents plugin because manual commits, `response.cre
 
 **Server API (B builds, A consumes):**
 - `GET /token?room=&identity=` → `{url, token}`.
-- `POST /api/sessions` (multipart: `scenario`, `character` = preset id or `custom_text`, `time_limit_s`, `qa_s`, `notes`, `slides` PDF, optional `support_doc`) → `{session_id, slide_count}`.
+- `POST /api/sessions` (multipart: `scenario`, `character` = preset id or `custom_text`, `time_limit_s`, `qa_s`, `notes`, `slides` PDF, optional `support_doc`, optional `avatar` = `true`|`false`, default `true`) → `{session_id, slide_count}`.
 - `GET /api/sessions/{id}` → **SessionConfig**:
   - `{session_id, scenario, time_limit_s, qa_s, notes, instructions}`. **`instructions` is optional and ignored by the agent**, which assembles the phase instructions itself (`agent/instructions.py`: `agent/prompts/examiner_base.md` + character + scenario + notes + slide digest + phase rules). The server doesn't need to assemble them.
+  - `avatar` (optional, default `true`): `false` means voice only. The agent then starts no avatar session and publishes the examiner's voice itself (as with `VIVA_AVATAR=0`).
   - `character: {id, name, persona, voice, avatar_id, interrupt_rate, strictness}`
     - **Custom characters:** `id` stays the preset id. The server appends `custom_text` (or free text sent as `character`, on top of the Supervisor) to the preset's `persona`.
     - The agent uses `persona` as given. It has no per-character prompt files.

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import characterPresets from '../../../demo/characters.json'
+import { AvatarPicker } from '../components/AvatarPicker'
 import { CharacterPicker } from '../components/CharacterPicker'
 import { DurationField } from '../components/DurationField'
 import { FileDrop } from '../components/FileDrop'
@@ -15,6 +16,7 @@ export function Setup() {
   const [scenario, setScenario] = useState('capstone_internship')
   const [character, setCharacter] = useState('supervisor')
   const [customText, setCustomText] = useState('')
+  const [avatar, setAvatar] = useState(true)
   const [slides, setSlides] = useState<File | null>(null)
   const [supportDoc, setSupportDoc] = useState<File | null>(null)
   const [timeLimit, setTimeLimit] = useState(300)
@@ -33,6 +35,7 @@ export function Setup() {
     form.set('time_limit_s', String(timeLimit))
     form.set('qa_s', String(qa))
     form.set('notes', notes)
+    form.set('avatar', String(avatar))
     form.set('slides', slides)
     if (supportDoc) form.set('support_doc', supportDoc)
     setBusy(true)
@@ -69,6 +72,8 @@ export function Setup() {
               customText={customText}
               onCustomText={setCustomText}
             />
+            <div className={styles.gap} />
+            <AvatarPicker avatar={avatar} onChange={setAvatar} />
           </section>
 
           <section>

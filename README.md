@@ -96,7 +96,7 @@ After an exam, the agent stays in the room and waits for the next **Start**. Pre
 - `demo3`: 3 slides, 3 minutes, no Q&A. A timed script with a planted claim for each feature is in [`docs/demo-script-3min.md`](docs/demo-script-3min.md).
 - `gradebook`: the 6-slide GradeBook deck, 4 minutes plus 1:30 of Q&A and the verdict.
 - `demo`: the 8-slide ERwait deck.
-**Voice-only** (no avatar slot used): `VIVA_AVATAR=0 uv run main.py <session_id>`.
+**Voice-only** (no avatar slot used, and you hear her ~1.4 s sooner): choose *Voice only* on the Setup page, or force it for any session with `VIVA_AVATAR=0 uv run main.py <session_id>`.
 **Use a wired headset**: speakers feed the examiner's voice back into the mic.
 
 ### Without any keys

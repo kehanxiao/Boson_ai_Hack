@@ -171,7 +171,8 @@ async def run(session_id: str) -> None:
     config = load_config(session_id)
     room_name = config.get("session_id", session_id)
 
-    avatar = create_avatar(room_name, config["character"].get("avatar_id", "builtin_claire_v1")) if USE_AVATAR else None
+    use_avatar = USE_AVATAR and config.get("avatar", True)  # the Setup page's choice; VIVA_AVATAR=0 overrides it
+    avatar = create_avatar(room_name, config["character"].get("avatar_id", "builtin_claire_v1")) if use_avatar else None
     if avatar:
         log.info("avatar session %s %s", avatar["id"], avatar["status"])
 
@@ -181,8 +182,8 @@ async def run(session_id: str) -> None:
     current: ExamController | None = None  # the exam in progress, or the next one waiting for Start
     try:
         await room.connect(os.environ["LIVEKIT_URL"], livekit_token(room_name, AGENT_IDENTITY))
-        log.info("agent joined room %s (avatar=%s)", room_name, USE_AVATAR)
-        if USE_AVATAR:
+        log.info("agent joined room %s (avatar=%s)", room_name, use_avatar)
+        if use_avatar:
             output = AvatarOutput(room, AVATAR_IDENTITY)
         else:
             output = VoiceOutput(room)
