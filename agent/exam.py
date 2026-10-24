@@ -36,6 +36,7 @@ VAD_SILENCE_S = 0.6  # pause length that triggers a commit
 GAP_S = {"high": 3, "medium": 4, "low": 8}
 # When the presenter is replying to her, a 0.6 s pause is often mid-thought ("Because." ... ): wait this much longer.
 REPLY_PATIENCE_S = 0.9
+PRESSED_QUIET_S = 8  # after she has pressed a point as far as her character does, she lets the presenter move on
 EXCHANGE_S = 20  # after she cuts in, the presenter's next words are a reply: the brain hears every pause
 FACTCHECK_SPACING_S = 10  # between two web searches
 MAX_CHUNK_S = 10  # force a commit during long unbroken speech so the brain isn't deaf
@@ -51,7 +52,9 @@ QA_GRACE_S = 25  # past the Q&A time, the exchange under way may finish within t
 MIN_QA_QUESTIONS = 2  # live run (Sat 03:08): the brain ENDed question time before asking anything
 ACK_SILENCE_S = 1.0  # going quiet this long after a reminder counts as acknowledging it
 IGNORE_AFTER_S = 3.5  # still talking this long after a reminder means it was ignored
-BARGE_IN_S = 0.8  # Q&A: presenter speech this long past the hold window stops her; "um" is shorter
+# Q&A: presenter speech this long past the hold window stops her. A "Yeah." keeps the VAD on "speaking" for its
+# 0.6 s silence tail too: at 0.8 s a one-word backchannel cut her question (live run, Sat 03:46).
+BARGE_IN_S = 1.5
 # Presentation: she cut in, so the presenter finishing their sentence is not talking over her. Live run (Sat 03:06):
 # at 0.8 s every interjection was cut after a word or two ("So, yeah.", "Because.", "Oh.").
 BARGE_IN_TALK_S = 2.5
@@ -76,6 +79,20 @@ def follow_ups(character: dict) -> int:
     Live run (Sat 03:06): with 2 for The Supervisor, a dodged question was raised three times, which felt nagging."""
     strictness = int(character.get("strictness", 3))
     return 2 if strictness >= 5 else 1
+
+
+STOP_WORDS = {"the", "a", "an", "and", "or", "is", "it", "its", "it's", "you", "your", "you're", "what", "if", "of",
+              "to", "in", "on", "that", "this", "there", "there's", "do", "does", "how", "so", "but", "with", "as"}
+
+
+def content_set(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z']+", text.lower()) if w not in STOP_WORDS}
+
+
+def similar(a: set[str], b: set[str]) -> bool:
+    """The same point reworded: "Your code unpacks each row as exactly two fields..." and "You unpack each CSV
+    row as exactly two fields..." (live run, Sat 03:44) share most of their content words."""
+    return bool(a and b) and len(a & b) / len(a | b) >= 0.5
 
 
 def heard_part(text: str, fraction: float) -> str:
@@ -141,7 +158,7 @@ class ExamController:
         self.exchange: dict | None = None  # {"until", "depth"}: the presenter is replying to her
         self._reask: tuple | None = None  # a pause that came while the brain was deciding
         self._gap_pending: dict | None = None  # a pause that came during the gap: judged when the gap ends
-        self.said: deque[str] = deque(maxlen=4)  # her recent brain lines, normalised: never the same one twice
+        self.said: deque[set[str]] = deque(maxlen=6)  # her recent brain lines' content words: no point twice
 
         # Reminders, Q&A, fact-check
         self.reminder: dict | None = None
@@ -531,10 +548,11 @@ class ExamController:
                                ref=d.ctx.get("pause_at"), line=d.text)
 
     async def interject(self, line: str, ctx: dict) -> None:
-        key = " ".join(re.findall(r"[a-z']+", line.lower()))
-        if key in self.said:
-            # Live run (Sat 03:07): the same line four times in a row while the presenter kept talking over her.
-            await self.note("[She has already said exactly that. Let it go for now, or say something new.]")
+        key = content_set(line)
+        if sum(similar(key, earlier) for earlier in self.said) >= 2:
+            # Once more is fine (they asked her to repeat, live run Sat 03:44); a third time is nagging (the same
+            # line four times while the presenter kept talking over her, Sat 03:07).
+            await self.note("[She has already made that point twice. Let it go for now, or say something new.]")
             return
         self.said.append(key)
         slide = ctx.get("slide", self.slide)
@@ -612,7 +630,9 @@ class ExamController:
             else:
                 self.exchange = {"until": now + EXCHANGE_S, "depth": self.exchange["depth"] + 1 if reply else 0}
                 if self.exchange["depth"] >= self.follow_ups:
-                    # She has pressed as far as this character does: the point waits for the questions.
+                    # She has pressed as far as this character does: the point waits for the questions, and the
+                    # presenter gets room to move on (live run, Sat 03:44: five lines in a row on one slide).
+                    self.quiet_until = max(self.quiet_until, now + PRESSED_QUIET_S)
                     await self.note("[She has pressed this point enough for now. Let it go until the questions, "
                                     "unless they come back to it.]")
 
