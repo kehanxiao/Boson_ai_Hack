@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { AvatarStage } from '../components/AvatarStage'
-import { Captions } from '../components/Captions'
 import { ExaminerState } from '../components/ExaminerState'
 import { FactCheck } from '../components/FactCheck'
 import { LatencyHud } from '../components/LatencyHud'
@@ -77,7 +76,6 @@ export function Session({ sessionId, fake, speed, autostart = false }: Props) {
         <aside className={styles.aside}>
           <AvatarStage tracks={session.avatar} character={config.character} speaking={speaking} voiceOnly={config.avatar === false} />
           <FactCheck factcheck={view.factcheck} now={now} />
-          <Captions captions={view.captions} />
           {view.ended && (
             <a className={styles.scorecard} href={`/scorecard/${encodeURIComponent(sessionId)}`}>
               View scorecard →

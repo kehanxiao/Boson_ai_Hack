@@ -31,7 +31,7 @@ Every AI is built to be your assistant. Practising a thesis defense, a capstone 
 - **Manual turn control** (`turn_detection: null`) on both sessions. Presenter audio streams continuously. Our own VAD commits a chunk at each breath, which gives a transcript **without** an automatic reply. We decide when the examiner speaks: the voice session says the brain's line word for word (`response.create` with per-response instructions). That is what makes interruptions, holding the floor and our own barge-in policy possible.
 - **Clean cancellation:** `response.cancel` → avatar `clear_buffer()` → `conversation.item.truncate`, so the transcript matches what was actually heard (the server confirms the cancel in about 31 ms).
 - **Server-executed `web_search`** for live fact-checks.
-- **Code-switching:** answers in Indonesian or Mandarin (or mixed) are understood from the audio, in the talk and in Q&A. `higgs-stt-3.1` gives the presenter captions.
+- **Code-switching:** answers in Indonesian or Mandarin (or mixed) are understood from the audio, in the talk and in Q&A. `higgs-stt-3.1` transcribes the presenter for the session log and the scorecard. Nothing is shown on screen: the interface is voice only.
 - **Higgs Avatar** realtime sessions on LiveKit Cloud (preset avatars), with a voice-only fallback (`VIVA_AVATAR=0`).
 - Phase changes (presentation → Q&A → debrief) use a mid-session `session.update` of the instructions (Q&A also removes `web_search`).
 
@@ -39,7 +39,7 @@ Every AI is built to be your assistant. Practising a thesis defense, a capstone 
 ```mermaid
 flowchart LR
   subgraph Browser["web/ (React + livekit-client)"]
-    Setup[Setup page] --> Session[Session page<br/>slides · timer · avatar · captions]
+    Setup[Setup page] --> Session[Session page<br/>slides · timer · avatar]
     Session --> Score[Scorecard page]
   end
   subgraph Server["server/ (FastAPI)"]
@@ -49,7 +49,7 @@ flowchart LR
   end
   subgraph Agent["agent/ (Python worker)"]
     VAD[Silero VAD] --> Brain[Higgs Realtime: brain<br/>text only, decides]
-    VAD --> RT[Higgs Realtime: voice<br/>speaks, searches, captions]
+    VAD --> RT[Higgs Realtime: voice<br/>speaks, searches, transcribes]
     Brain -->|"SAY / CHECK"| RT
     RT --> Out[Avatar / voice output]
   end
@@ -64,7 +64,7 @@ flowchart LR
   Avatar -->|"video + voice, as participant boson-avatar"| Session
 ```
 
-- **`web/`**: Vite + React + TypeScript. The Session page talks to the agent over LiveKit text streams: `viva.ctl` (start, slide changes, phases) and `viva.ui` (examiner state, captions, reminders, fact-checks, latency).
+- **`web/`**: Vite + React + TypeScript. The Session page talks to the agent over LiveKit text streams: `viva.ctl` (start, slide changes, phases) and `viva.ui` (examiner state, reminders, fact-checks, latency). The agent also sends transcript captions, but the page doesn't show them: the interface is voice only.
 - **`server/`**: FastAPI. Mints LiveKit tokens, renders uploaded PDFs with PyMuPDF, runs the per-slide Haiku analysis in parallel (structured outputs), serves the session config to the agent, stores the session log and generates the scorecard.
 - **`agent/`**: a hand-built worker. It joins the room, starts the avatar and drives a raw Higgs Realtime WebSocket. It owns turn-taking around the brain: VAD commits, when the brain is asked, holding the floor, being talked over, the timer, phases, fact-checks and the session log.
 - The A↔B interface (identities, message shapes, API) is pinned in [`PLAN.md`](PLAN.md) → "Interfaces between A and B".
@@ -142,7 +142,7 @@ Run the server and the web app (no keys needed for these two pages):
 - **Everyone in the room is "the presenter".** There is no speaker separation: background voices are heard and transcribed as yours. Use a headset in a quiet room.
 - **No per-line tone of voice.** Her delivery didn't audibly change with per-response tone instructions ("firmly", "warmly"), and Higgs TTS delivery tags (`<|emotion:…|>`) had no effect on the Realtime 1.5 preview voice (`agent/probes/tone_check.py`). Her character comes through what she says and when she says it.
 - **The preview model's own turn-taking can't be switched on mid-session** (`turn_detection` is fixed at session start). Q&A therefore also runs on our manual turns: end-of-turn and barge-in come from our VAD and policy, not Higgs's built-in VAD.
-- **Speech-to-text:** short Indonesian phrases transcribe unreliably, so treat captions and scorecard quotes in Indonesian as approximate. STT occasionally invents a sentence from silence, and it can split a sentence at a breath (e.g. losing "percent better").
+- **Speech-to-text:** short Indonesian phrases transcribe unreliably, so treat scorecard quotes in Indonesian as approximate. STT occasionally invents a sentence from silence, and it can split a sentence at a breath (e.g. losing "percent better").
 - **Fact-checks:** the web search fires reliably for "who made it / when" claims. On technical claims ("`sorted()` uses quicksort") the brain sometimes corrects you from memory instead. The search follow-up is sometimes unreliable in wording or length; if it hasn't arrived after 12 s, the examiner gives the correction from memory.
 - **Upstream failures:** a Realtime response occasionally fails upstream (`response.done status=failed`). The voice and the brain retry once.
 - **Avatar capacity is shared** across all hackathon teams, and the avatar adds latency. If no slot is free, run voice-only (`VIVA_AVATAR=0`).

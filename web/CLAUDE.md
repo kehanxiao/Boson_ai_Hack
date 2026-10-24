@@ -17,7 +17,7 @@ Stack: Vite, React, TS, `livekit-client`. Server base URL comes from `VITE_SERVE
   - `AvatarStage`: video and audio of participant `boson-avatar`.
   - `SlideViewer`: images from SessionConfig `slides[].image_url`, with prev/next.
   - `Timer`
-  - `Captions`
+  - No transcript on screen: the interface is voice only (Sat 10:40). `caption` messages still arrive and the log keeps every line for the scorecard.
   - `ExaminerState` badge: listening / interjecting / holding the floor / Q&A / debrief.
   - `LatencyHud`
   - Fetch `GET /api/sessions/{id}`, then `GET /token?room={id}&identity=presenter`.

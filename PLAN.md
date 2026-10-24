@@ -9,6 +9,7 @@
 >   - A reminder is acknowledged by 1 s of silence, an acknowledging phrase, or jumping to the last slide.
 >   - She nudges after 4 s of silence.
 >   - The early time reminder comes at T−2, or T−1 for a talk under 5 minutes.
+> - **The interface is voice only:** the Session page shows no transcript (Sat 10:40). The agent still sends `caption` messages, and the log keeps every line for the scorecard.
 > - **The voice gives the verdict** when Q&A is on. A session with `qa_s: 0` has no Q&A and no verdict.
 > - **Never built:** `floor.py`, `timer.py`, `phases.py` and `prompts/characters/` (that logic lives in `agent/exam.py` and the character's `persona`), and `docs/architecture.png` (the diagram is in the README).
 > - **Checkpoints:**

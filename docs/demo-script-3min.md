@@ -43,6 +43,6 @@ If you don't press End, time-up comes at 3:00 ("Time is up. Thank you, that's th
 ## What varies from run to run
 - **Her wording is never the same twice.** The table gives the gist. She might also combine two points or raise one a little later.
 - **The web search is most reliable for "who made it / when" claims**, which is why step 1:20 exists. On a technical claim (e.g. "sorted uses quicksort") she sometimes corrects you from memory instead.
-- **Code-switching depends on the live brain understanding real Indonesian speech.** The headless sim can't test it, because its voice turns Indonesian into English. Captions of Indonesian are approximate.
+- **Code-switching depends on the live brain understanding real Indonesian speech.** The headless sim can't test it, because its voice turns Indonesian into English. The transcript of Indonesian (in the log and the scorecard) is approximate.
 - **You hear her ~2.8 s after you stop with the avatar,** or ~1.4 s voice-only.
 - **If she repeats herself or goes quiet, carry on presenting.** She raises a point, presses it once, then lets it go. If you go quiet for 4 s, she urges you on ("Please continue.").

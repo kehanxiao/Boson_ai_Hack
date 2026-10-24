@@ -16,7 +16,7 @@ A presenter defends their slides; an avatar examiner (Higgs Realtime + Higgs Ava
 Don't edit the other role's folder without asking. The agent assembles the examiner's instructions itself (`agent/instructions.py` + `agent/prompts/`). From the server's `instructions` field it reads only the supporting-document excerpt.
 
 ## Key facts
-- Realtime model **`higgs-realtime-1.5-preview`** (hackathon preview) at `wss://api.boson.ai/v1/realtime`. The GA fallback `higgs-realtime` is selected via `BOSON_REALTIME_MODEL`. User-speech captions come from `higgs-stt-3.1`.
+- Realtime model **`higgs-realtime-1.5-preview`** (hackathon preview) at `wss://api.boson.ai/v1/realtime`. The GA fallback `higgs-realtime` is selected via `BOSON_REALTIME_MODEL`. User-speech transcripts (for the log and the scorecard; the page shows none) come from `higgs-stt-3.1`.
 - Higgs Avatar realtime sessions need **LiveKit Cloud** (self-hosted is refused) and use **preset avatars only**: `builtin_claire_v1`, `builtin_emma_v1`, `builtin_james_v1`.
 - Claude calls go through the official Anthropic SDK, model `claude-haiku-5-5` (`VIVA_HAIKU_MODEL`). Use structured outputs (`output_config.format`) for JSON.
 - Identities: room name = `session_id`. Agent `viva-agent`, avatar `boson-avatar`, presenter `presenter`.

@@ -5,7 +5,7 @@ A hand-built worker: joins the LiveKit room, starts a Higgs Avatar session, and 
 ## Files
 **Two Higgs Realtime sessions hear the presenter** (since Sat 01:00; see "Higgs brain" below):
 - the **brain** (`brain.py`, text only) decides what the examiner does;
-- the **voice** speaks the brain's lines word for word through the avatar, transcribes for captions, and runs the web search.
+- the **voice** speaks the brain's lines word for word through the avatar, transcribes for the log and the scorecard, and runs the web search.
 
 - `main.py`: live entry point (`uv run main.py [session_id]`, `VIVA_AVATAR=0` for voice-only, `VIVA_FACTCHECK=0`). Joins the room, starts the avatar unless the session says `avatar: false` (the Setup page's *Voice only*) or `VIVA_AVATAR=0` (429 retry), loads SessionConfig from the server (falls back to `demo/` for `demo`, `gradebook` and `demo3`), connects both sessions, forwards presenter audio, handles `viva.ctl`, releases the avatar with retries, uploads the log.
 - `brain.py`: the brain session. When asked, it answers one line: `SILENT`, `SAY: <words>`, `CHECK: <claim>`, or (Q&A) `END: <words>`. It gets the same audio and commits as the voice, plus `[bracketed]` notes: the slide, what she said that it didn't write (greeting, reminders, search results), and being talked over.
@@ -77,7 +77,7 @@ Stack: uv, Python 3.12, `livekit-agents` 1.8.8 (for `DataStreamAudioOutput`), `l
 - **Model latency** (end of user speech → first audio delta at the agent): **~420–600 ms** in English. Outliers of 1–2 s on Indonesian and on turns split by the VAD.
 - **Perceived latency is ~1.2–2 s.** On top of model latency come the 500 ms VAD silence wait and the avatar render + LiveKit transport. Measure it in the browser (`LatencyHud`), and compare with `VIVA_AVATAR=0`.
 - **Server VAD (`silence_duration_ms` 500) cuts thinking pauses** ("I think my."). Q&A needs a longer silence window or `semantic_vad` (K3).
-- **Indonesian:** the model understands it and replied in English. `higgs-stt-3.1` transcripts of short Indonesian phrases are shaky ("Coba ngomong" became "Cebong ngomong"). Treat captions and scorecard quotes in Indonesian as approximate.
+- **Indonesian:** the model understands it and replied in English. `higgs-stt-3.1` transcripts of short Indonesian phrases are shaky ("Coba ngomong" became "Cebong ngomong"). Treat scorecard quotes in Indonesian as approximate.
 - **Barge-in on server VAD works:** `speech_started` → `clear_buffer()` stops the avatar.
 - **`DELETE /v1/avatar/sessions/{id}` can return 429 `rate_limit_exceeded`.** Retry it with `Retry-After` in `finally`. If the process is killed (not Ctrl-C), release the session manually, or it holds a capacity slot until the room empties or `max_duration_seconds` runs out.
 - **A minimal prompt makes the model repeat its self-description.** That's expected, and the real examiner prompt fixes it.
@@ -134,7 +134,7 @@ Stack: uv, Python 3.12, `livekit-agents` 1.8.8 (for `DataStreamAudioOutput`), `l
   - With the format block only at the end, after a speaking-style paragraph, Higgs wrote good spoken lines without the tag 8–10 times in 10 (ablation via `--prompt-file`).
   - With that first line it was 0 in 10.
   - Transcription on or off and a note before every chunk made no difference.
-- **No transcription on the brain:** it hears the audio itself. Captions and the log come from the voice session's STT.
+- **No transcription on the brain:** it hears the audio itself. The log's transcripts come from the voice session's STT.
 - **It prefers correcting from memory over CHECK** ("sorted uses Timsort, not quicksort"). The prompt asks for CHECK on outside-world facts, so the presenter sees the evidence.
 - **Verdict (superseded):** at first the brain was asked for it with its own instructions (`SAY: Verdict: …`); with the Q&A instructions it answered SILENT. Now the voice gives the verdict (`enter_debrief` in `exam.py`).
 - **Voice responses can fail upstream** (`response.done status=failed`, "an upstream service call did not complete"). This happened about once per sim. Our requests are retried once.
