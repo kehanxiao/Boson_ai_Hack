@@ -13,6 +13,7 @@ Times are shortened: 140 s presentation, reminder at 95 s, 60 s of Q&A.
 import asyncio
 import json
 import logging
+import os
 import pathlib
 import sys
 import time
@@ -206,8 +207,9 @@ async def main() -> None:
             await controller.on_brain_decision(d)
 
     key = AUTH["Authorization"].split(" ", 1)[1]
+    brain_key = os.environ.get("BOSON_BRAIN_API_KEY") or key  # as main.py
     realtime = RealtimeClient(REALTIME_URL, key, on_event)
-    brain = Brain(REALTIME_URL, key, on_decision)
+    brain = Brain(REALTIME_URL, brain_key, on_decision)
     controller = ExamController(config, realtime, SimulatedOutput(), PrintUI(now), slog, brain, reminder_before_s=45)
     await realtime.connect(realtime_session(config))
     await brain.connect(brain_session(config))

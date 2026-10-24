@@ -57,8 +57,9 @@ BARGE_IN_S = 0.8  # Q&A: presenter speech this long past the hold window stops h
 BARGE_IN_TALK_S = 2.5
 BARGEABLE = {"interjection", "qa", "greeting"}  # reminders, fact-checks and the verdict hold the floor
 GREETING_DELAY_S = 1.2  # Start was just clicked: let the presenter look up first
-# A voice response asked for within ~1 s of a brain response starts ~1.6-1.8 s later; after 0.8 s it starts in
-# ~0.36 s, so waiting is faster overall (probes/two_session_latency.py; both sessions share one API key).
+# On one API key, a voice response asked for within ~1 s of a brain response starts ~1.6-1.8 s later; after 0.8 s
+# it starts in ~0.36 s, so waiting is faster overall. With the brain on its own key (BOSON_BRAIN_API_KEY) there is
+# no delay: ~0.35 s even right after the brain (probes/two_session_latency.py), so no wait.
 BRAIN_SETTLE_S = 0.8
 
 STT_PLACEHOLDER = "the transcription is not available"  # seen live from higgs-stt-3.1 when it fails
@@ -220,7 +221,8 @@ class ExamController:
         self._gap_pending = None
         self._requested = {"kind": kind, "hold": hold, "at": time.monotonic(), "line": line, "reply": reply,
                            "cue": cue, "max_tokens": max_tokens, "retried": retried}
-        settle = (self.brain.last_done + BRAIN_SETTLE_S - time.monotonic()) if self.brain else 0.0
+        shared_key = self.brain is not None and self.brain.rt.headers == self.realtime.headers
+        settle = (self.brain.last_done + BRAIN_SETTLE_S - time.monotonic()) if shared_key else 0.0
         if settle > 0:
             await asyncio.sleep(settle)  # the voice is reserved meanwhile (_requested), so nothing else cuts in
             if self._requested is None or self._requested.get("cue") != cue:

@@ -128,9 +128,9 @@ Stack: uv, Python 3.12, `livekit-agents` 1.8.8 (for `DataStreamAudioOutput`), `l
 - ⚠️ **A response asked for right after another response starts late.** A voice `response.create` sent within ~1 s of a brain `response.done` takes ~1.6–1.8 s to its first audio; 0.8 s later it takes ~0.36 s (`probes/two_session_latency.py`, 5 rounds).
   - The cause is not the voice's own commit (`probes/voice_latency.py`) and not the brain's commit.
   - Cancelling the brain's response doesn't help.
-  - **Within one session it happens too:** a spoken response right after a text response and a `session.update` took ~1.65 s (`probes/single_session.py`). So it may be server-side after any response, not "two sessions on one key".
+  - **Within one session it happens too:** a spoken response right after a text response and a `session.update` took ~1.65 s (`probes/single_session.py`).
   - `say()` therefore waits until 0.8 s after the brain's last response (`BRAIN_SETTLE_S`), which is faster overall.
-  - A brain on a separate key (`BOSON_BRAIN_API_KEY`) would tell whether it is per key (untested).
+  - **It is per key.** With the brain on its own key (`BOSON_BRAIN_API_KEY`), the voice's first audio is ~0.35 s even when asked right after the brain's `response.done` (4 rounds), so `say()` waits only when both share a key. Pause → first audio ≈ 0.45 s brain + 0.35 s voice, plus the avatar.
 - **One session can't be both brain and voice:** a per-response `output_modalities: ["text"]` is ignored (the decision came back as audio), and switching the session to text mid-session returned no text (`probes/single_session.py`).
 
 ## UI events
