@@ -58,6 +58,21 @@ Stack: uv, Python 3.11+, `livekit-agents` (PyPI, for `DataStreamAudioOutput`), `
 - Generation runs faster than real time (4.2 s of speech in ~1.1 s), so the commit window reopens long before the avatar finishes speaking.
 - **Interjection latency budget:** pause detection (~0.3 s) + transcript (~0.4 s) + director (Haiku, ~0.5–0.9 s?) + first audio (~0.45 s) + avatar render (~0.3–1 s) ≈ **2–3 s**. This fits the PLAN target of a cut-in at the next breath. Measure the director step for real.
 
+## K3 + K5 results (Fri 21:55, `probes/cancel_truncate.py`, `probes/qa_mode.py`)
+- **K3 cancel:** `response.cancel` mid-generation → `response.done status=cancelled` in **31 ms**.
+  - `conversation.item.truncate {audio_end_ms}` works. The stored item becomes e.g. `'I need<|INTERRUPTED|>'`, so the model knows it was cut off.
+  - The session is immediately usable again.
+- ⚠️ **`turn_detection` cannot be changed after session start** (`invalid_request_error`). Pick manual (`null`) at session start and keep it. Q&A end-of-turn and barge-in are ours.
+- **`semantic_vad`** is accepted at session start but jumped in during a 2.5 s pause and fragmented a 12 s Indonesian answer into 3 replies. Not used.
+- **Instructions-only `session.update` mid-session works.** Use it for phase changes.
+- **Code-switching on manual turns:** Indonesian- and Mandarin-mixed answers got on-topic English replies, first audio **+625–734 ms after commit**.
+- **Server `web_search` works with manual turns:**
+  - preamble ("Let me just double-check…") → `function_call executor=server` → output after ~0.5–4 s → the **server starts the follow-up response itself** (no `response.create`).
+  - Seen once: "LightGBM was released by Microsoft, not Google… 2017."
+  - **Unreliable wording:** the follow-up sometimes only repeats the preamble, sometimes restates the wrong claim first, and runs long (35 s). Fix with session-level rules plus a length cap. The follow-up response doesn't carry the per-response `instructions` of the request that triggered the search.
+- ⚠️ **Never put director cues in conversation items.** As a `user` message the model read the cue aloud ("The director's cue is asking…") and answered it itself. Per-response `instructions` behaved perfectly (K2).
+- **Verbosity:** without a cap, Q&A replies ran 17–54 s. Use per-response `max_output_tokens`, plus session `max_output_tokens` for server-initiated follow-ups (e.g. after a search).
+
 ## UI events
 Publish `viva.ui` messages exactly as specified in `PLAN.md` → "Interfaces between A and B", via `room.local_participant.send_text(json, topic="viva.ui")`. Listen for `viva.ctl` with a text stream handler (pattern in `docs/vendor/higgs-realtime-tutorial/livekit/probe.py`).
 

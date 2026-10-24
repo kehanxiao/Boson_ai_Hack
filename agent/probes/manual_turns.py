@@ -14,28 +14,11 @@ session that has turn_detection: null, and the probe checks:
 """
 
 import asyncio
-import base64
-import hashlib
-import json
-import os
-import pathlib
-import time
 
-import requests
 import websockets
-from dotenv import load_dotenv
 
-HERE = pathlib.Path(__file__).resolve().parent
-load_dotenv(HERE.parent.parent / ".env")
+from common import AUTH, EXAMINER, RATE, REALTIME_URL, Probe, log, now, print_results, session_update, tts_pcm
 
-MODEL = os.environ.get("BOSON_REALTIME_MODEL", "higgs-realtime-1.5-preview")
-REALTIME_URL = os.environ.get("BOSON_REALTIME_URL", "wss://api.boson.ai/v1/realtime")
-AUTH = {"Authorization": f"Bearer {os.environ['BOSON_API_KEY']}"}
-RATE = 24_000
-FRAME_BYTES = RATE // 50 * 2  # 20 ms of 16-bit mono PCM
-CACHE = HERE / ".cache"
-
-PRESENTER_VOICE = "oliver"
 SEG_INTRO = "Hi everyone. Today I'm presenting ERwait, a system for forecasting emergency room wait times."
 SEG_CLAIM = "And the headline result: our model is forty percent better, which is a big step forward for the hospital."
 SEG_CONTINUE = (
@@ -43,116 +26,10 @@ SEG_CONTINUE = (
     "visits, and we removed the outliers before training. We also added weather and holiday features, and we "
     "split the data by time so that the model never sees the future."
 )
-
-EXAMINER = (
-    "You are Dr. Claire Moreau, a rigorous but fair examiner at a project defense. You are the examiner, not an "
-    "assistant. Speak in short spoken sentences. Never apologise for asking. Text in square brackets is a context "
-    "note from the system, not something the presenter said; never read it aloud."
-)
 CUE = (
     EXAMINER + " Interject now, while the presenter is mid-flow. In one short sentence, cut in and ask what the "
     "forty percent is relative to and on which metric."
 )
-
-T0 = time.monotonic()
-
-
-def now() -> float:
-    return time.monotonic() - T0
-
-
-def log(message: str) -> None:
-    print(f"{now():7.2f}s  {message}", flush=True)
-
-
-def tts_pcm(text: str) -> bytes:
-    """Raw 24 kHz 16-bit mono PCM for text, cached by content."""
-    CACHE.mkdir(exist_ok=True)
-    path = CACHE / f"{hashlib.sha1((PRESENTER_VOICE + text).encode()).hexdigest()[:16]}.pcm"
-    if path.exists():
-        return path.read_bytes()
-    r = requests.post(
-        "https://api.boson.ai/v1/audio/speech",
-        headers=AUTH,
-        json={"model": "higgs-tts-3", "input": text, "voice": PRESENTER_VOICE, "response_format": "pcm", "stream": True},
-        stream=True,
-        timeout=120,
-    )
-    r.raise_for_status()
-    pcm = b"".join(r.iter_content(8192))
-    path.write_bytes(pcm)
-    return pcm
-
-
-class Probe:
-    def __init__(self, ws):
-        self.ws = ws
-        self.events: list[tuple[float, dict]] = []
-        self.response_active = False
-        self.audio_bytes = 0
-        self.first_audio_at: float | None = None
-        self.created_at: float | None = None
-
-    async def send(self, event: dict) -> None:
-        await self.ws.send(json.dumps(event))
-
-    async def stream(self, pcm: bytes, label: str) -> None:
-        """Send PCM at real-time pace, like a microphone would."""
-        log(f"presenter speaking: {label} ({len(pcm) / (RATE * 2):.1f}s)")
-        start = time.monotonic()
-        for i in range(0, len(pcm), FRAME_BYTES):
-            await self.send({"type": "input_audio_buffer.append", "audio": base64.b64encode(pcm[i:i + FRAME_BYTES]).decode()})
-            target = start + (i + FRAME_BYTES) / (RATE * 2)
-            await asyncio.sleep(max(0.0, target - time.monotonic()))
-
-    async def silence(self, seconds: float) -> None:
-        await self.stream(b"\x00\x00" * int(RATE * seconds), f"silence {seconds}s")
-
-    async def receive(self) -> None:
-        async for message in self.ws:
-            event = json.loads(message)
-            kind = event["type"]
-            self.events.append((now(), event))
-            if kind == "response.output_audio.delta":
-                self.audio_bytes += len(event.get("delta", "")) * 3 // 4
-                if self.first_audio_at is None:
-                    self.first_audio_at = now()
-                continue  # never log audio
-            if kind == "response.created":
-                self.response_active = True
-                self.created_at = now()
-                self.first_audio_at = None
-                self.audio_bytes = 0
-                log("response.created")
-            elif kind == "response.done":
-                self.response_active = False
-                status = event.get("response", {}).get("status")
-                log(f"response.done status={status} audio={self.audio_bytes / (RATE * 2):.1f}s")
-            elif kind == "conversation.item.input_audio_transcription.completed":
-                log(f"TRANSCRIPT: {event.get('transcript', '')!r}")
-            elif kind == "response.output_audio_transcript.done":
-                log(f"EXAMINER: {event.get('transcript', '')!r}")
-            elif kind == "error":
-                err = event.get("error", {})
-                log(f"ERROR {err.get('type')}: {err.get('message')}")
-            elif kind in ("session.created", "session.updated", "input_audio_buffer.committed", "conversation.item.added"):
-                extra = ""
-                if kind.startswith("session"):
-                    extra = f" model={event.get('session', {}).get('model')} turn_detection={event.get('session', {}).get('audio', {}).get('input', {}).get('turn_detection')}"
-                elif kind == "conversation.item.added":
-                    item = event.get("item", {})
-                    extra = f" {item.get('type')}/{item.get('role')}"
-                log(kind + extra)
-
-    def seen(self, kind: str, after: float, before: float = 1e9, **match) -> list[dict]:
-        out = []
-        for t, e in self.events:
-            if e["type"] == kind and after <= t <= before and all(e.get(k) == v for k, v in match.items()):
-                out.append(e)
-        return out
-
-    def errors(self, error_type: str, after: float) -> list[dict]:
-        return [e for t, e in self.events if t >= after and e["type"] == "error" and e.get("error", {}).get("type") == error_type]
 
 
 async def main() -> None:
@@ -163,17 +40,7 @@ async def main() -> None:
     async with websockets.connect(REALTIME_URL, additional_headers=AUTH, max_size=None) as ws:
         probe = Probe(ws)
         receiver = asyncio.create_task(probe.receive())
-        await probe.send({
-            "type": "session.update",
-            "session": {
-                "model": MODEL,
-                "instructions": EXAMINER + " During the presentation, stay silent unless you are explicitly asked to respond.",
-                "audio": {
-                    "input": {"turn_detection": None, "transcription": {"model": os.environ.get("BOSON_CAPTION_MODEL", "higgs-stt-3.1")}},
-                    "output": {"voice": "default"},
-                },
-            },
-        })
+        await probe.send(session_update(EXAMINER + " During the presentation, stay silent unless you are explicitly asked to respond.", None))
         await asyncio.sleep(1.5)
 
         # K4: a slide note is context only.
@@ -201,7 +68,7 @@ async def main() -> None:
         await probe.stream(claim, "claim")
         await probe.send({"type": "input_audio_buffer.commit"})
         log("commit (claim)")
-        cont_task = asyncio.create_task(probe.stream(cont, "presenter keeps talking"))
+        cont_task = asyncio.create_task(probe.stream(cont, "keeps talking"))
         await asyncio.sleep(0.4)
         t_create = now()
         await probe.send({"type": "response.create", "response": {"instructions": CUE}})
@@ -217,12 +84,8 @@ async def main() -> None:
         log("commit during the active response (expect rejection)")
 
         await cont_task
-        for _ in range(200):
-            if probe.seen("response.done", t_create):
-                break
-            await asyncio.sleep(0.1)
-        done = probe.seen("response.done", t_create)
-        status = done[0].get("response", {}).get("status") if done else None
+        done = await probe.wait_for("response.done", t_create, timeout=20)
+        status = done.get("response", {}).get("status") if done else None
         spoke = probe.first_audio_at is not None and probe.audio_bytes > 0
         lat_created = (probe.created_at - t_create) * 1000 if probe.created_at else None
         lat_audio = (probe.first_audio_at - t_create) * 1000 if probe.first_audio_at else None
@@ -245,9 +108,7 @@ async def main() -> None:
         )
         receiver.cancel()
 
-    print("\n=== RESULTS ===")
-    for name, outcome in results.items():
-        print(f"{name:45s} {outcome}")
+    print_results(results)
 
 
 if __name__ == "__main__":

@@ -1,9 +1,13 @@
 # Viva: an AI examiner for presentation defenses (Higgs Audio Hackathon build plan)
 
-> **Status (Fri 21:35):**
+> **Status (Fri 21:55):**
 > - **A: C0 passed.** Avatar + `higgs-realtime-1.5-preview` working.
-> - **K1, K2 and K4 passed (headless):** manual commits give a transcript and no auto-reply; `response.create` makes the examiner cut in while the presenter keeps talking (first audio +453 ms). Details in `agent/CLAUDE.md`.
-> - **Next for A:** K3 (cancel/truncate), K5 (switch to server VAD mid-session, code-switching, web search).
+> - **K1–K4 passed (headless)**, and K5 is done:
+>   - Turn mode can't change mid-session, so we use manual turns throughout (design decision 4 revised).
+>   - Code-switching works.
+>   - Web search fact-checking works but needs prompt tuning.
+> - Details in `agent/CLAUDE.md`. **C1 go/no-go: GO** on the primary design.
+> - **Next for A:** Stage 2 (VAD commits, director, floor policy), which needs `ANTHROPIC_API_KEY` in `.env`.
 > - **B: Stage 0 done.** `server/` (FastAPI via uv: `/token`, `GET /api/sessions/{id}` + slide PNGs + scorecard for `demo`) and `web/` (Vite + React + TS + livekit-client) are scaffolded. The `Session` page works against the fake agent at `/session/demo?fake=1`. `demo/deck.pdf` is a generated **placeholder** (`server/scripts/make_placeholder_deck.py`); replace it with the real export.
 > - This file is the single source of truth. Update the status line when a checkpoint passes.
 
@@ -45,9 +49,17 @@
    - **Acknowledgement** means one of: the presenter goes silent within about 2 s; an acknowledgement phrase appears in the transcript ("okay", "noted", "yes"); or the presenter jumps to the last slide when told to wrap up.
    - With no acknowledgement, the examiner **escalates once**, more firmly: "Let me stop you there."
    - Real cancellation (`response.cancel`, then avatar `clear_buffer()`, then `conversation.item.truncate`) only happens in Q&A, when the presenter talks for more than about 1 s past the hold window.
-4. **Two turn-taking modes.**
-   - **Presentation:** manual mode plus the director, as above.
-   - **Q&A:** `session.update` switches to `server_vad`. This uses Higgs's own turn-taking and its 125 ms barge-in, so judges see the model's native strengths. If switching mid-session fails, Q&A also runs on manual mode, with local VAD deciding when a turn ends.
+4. **One session, manual turns for the whole exam.** (Revised after K5: `turn_detection cannot be changed after session start`.)
+   - **Presentation:** manual turns plus the director, as above.
+   - **Q&A:** still manual. **We own end-of-turn.**
+     - When the local VAD hears ~0.6 s of silence, make a *speculative commit*: it costs nothing and triggers no reply.
+     - Send `response.create` once the silence reaches the character's patience threshold (~1.2–1.5 s), or earlier if the transcript reads as a complete answer.
+     - If the presenter resumes, keep appending; several user items are fine.
+   - **Barge-in:** also ours, via `response.cancel` → `clear_buffer()` → `truncate` (K3: stops in 31 ms).
+   - **Why not Higgs's automatic modes:** `semantic_vad` is accepted at session start, but it jumped in during a 2.5 s thinking pause and split a long Indonesian answer into 3 replies (K5c/K5g). That's unsuitable for presenters.
+   - **Phase changes** (presentation → Q&A → debrief) use an instructions-only `session.update`, which K5f showed works mid-session.
+   - **Director cues** go in per-response `instructions`, never conversation items. As a user item, the model read the cue aloud ("The director's cue is asking…") and answered it itself.
+   - **Brevity:** per-response `max_output_tokens`. Session instructions also carry the persistent rules (≤2 sentences, never mention notes or cues, after a web search state only the finding).
 5. **Authority through behaviour, not rudeness.** UX counts.
    - The examiner holds the floor, presses with follow-ups and keeps strict time.
    - It doesn't over-praise and doesn't apologise for asking.
