@@ -174,6 +174,7 @@ def verified_moments(draft: list[DraftMoment], log: list[dict]) -> list[dict]:
 
 
 async def generate_scorecard(log: list[dict], config: dict) -> dict:
+    log = exam_only(log)
     prompt = (
         f"Examiner: {config['character']['name']}. Scenario: {config['scenario']}.\n"
         f"Timing facts: {timing_facts(log, config['time_limit_s'], config['qa_s'])}\n\n"
@@ -209,6 +210,15 @@ async def generate_scorecard(log: list[dict], config: dict) -> dict:
 
 def read_log(text: str) -> list[dict]:
     return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def exam_only(log: list[dict]) -> list[dict]:
+    """Drop presenter speech after the debrief starts: it isn't part of the defense
+    (live test: the mic kept being transcribed during the verdict, incl. an STT hallucination)."""
+    debrief_t = next((e["t"] for e in log if e["kind"] == "phase" and e["phase"] in ("debrief", "end")), None)
+    if debrief_t is None:
+        return log
+    return [e for e in log if not (e["kind"] == "chunk" and e["t"] >= debrief_t)]
 
 
 if __name__ == "__main__":

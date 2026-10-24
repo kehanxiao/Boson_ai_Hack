@@ -19,7 +19,7 @@ Stack: uv, Python 3.11+, `fastapi`, `uvicorn`, `python-multipart`, `livekit-api`
 - **Per slide, in parallel:** Haiku (`VIVA_HAIKU_MODEL`, default `claude-haiku-5-5`) gets the slide PNG plus extracted text, and returns `{summary, claims[], weak_points[], questions[]}` through structured outputs (`output_config.format`).
   - Haiku 5.5 image support is assumed. Check it in K6; the fallback is a text-only prompt.
   - Keep each call small; use `max_tokens` around 1–2K.
-- **Instructions:** assemble `agent/prompts/examiner_base.md` (owned by A) + the character persona (`demo/characters.json` or custom text) + scenario + time limit + notes + a compact per-slide digest.
+- **Instructions:** `SessionConfig.instructions` is optional and **ignored by the agent** (contract, Fri 23:50); A builds the phase instructions in `agent/instructions.py`. The server still fills it with a readable brief for debugging, independent of `agent/prompts/`.
 - Claude calls use the official Anthropic Python SDK only. No OpenAI-compatible shims.
 
 ## Scorecard (`scorecard.py`)
@@ -39,7 +39,7 @@ Stack: uv, Python 3.11+, `fastapi`, `uvicorn`, `python-multipart`, `livekit-api`
 - Pipeline: validate fields and PDF (≤ 30 MB, 1–40 pages) → `data/<id>/deck.pdf` → render → prep (Haiku) → `config.json` (SessionConfig) + `prep.json` (timing and per-slide errors, not part of the contract). About 3 s for 6 slides.
 - `session_id` = `s` + 10 hex chars (also the LiveKit room name).
 - **Character field:** `character` is a preset id. Optional free text (`custom_text`, or `character` itself when it isn't a preset id) is appended to the base preset's persona. With no preset given, the base is `supervisor`. `character.id` stays the base preset id. ⚠️ This is our reading of "`character` = preset id or `custom_text`"; confirm with A.
-- **Instructions** (`instructions.py`): `agent/prompts/examiner_base.md` if it exists, else a stand-in carrying A's K5 rules; then character + scenario + times + notes + support-doc excerpt (≤ 4000 chars) + a slide digest with weak points.
+- **Instructions** (`instructions.py`): a fixed base brief + character + scenario + times + notes + support-doc excerpt (≤ 4000 chars) + a slide digest with weak points. Informational only (the agent ignores it), and it no longer reads `agent/prompts/`.
 - If a slide's Haiku call fails, that slide falls back to its own text and the session is still created. If rendering fails, the folder is removed and the request returns 500.
 
 ## Scorecard (built Fri 23:30, `scorecard.py`)
@@ -47,4 +47,10 @@ Stack: uv, Python 3.11+, `fastapi`, `uvicorn`, `python-multipart`, `livekit-api`
 - **Code owns what must be exact.** Quotes are checked against presenter log lines: `t`/`slide` come from the matching line, and quotes that aren't verbatim are dropped. `unacknowledged` moments come from `escalation` events (the presenter line between the reminder and the escalation). The four criteria names are fixed, scores are clamped to 1–5, and improvements are capped at 3.
 - Timing facts (time used vs. limit, reminder/escalation/ack times) are computed from the log and given to the model; it doesn't do the arithmetic.
 - Answering in another language never counts against the presenter (rule in the prompt; it was penalised before the rule).
+- Presenter `chunk`s after the `debrief` phase are ignored (`exam_only`). In the first live run, the mic kept being transcribed during the verdict, including an STT hallucination from silence.
+
+## First live integration (Fri 23:55): web + server + A's agent (voice-only), headless
+- Ran a full session in a fresh room: fake browser mic = TTS presenter track, Start → slides 2, 3 → Q&A → End. **Everything connected:** start handshake, greeting, presenter captions, slide changes, interjection, Q&A question, verdict, `ended`, log upload (27 lines), and a scorecard from the real log (14 s, all quotes verbatim). No browser console errors.
+- `pause_to_interjection` arrived in the HUD: **2.4 s**.
+- Fixed on the web side: voice-only audio comes from `viva-agent` (it was only played from `boson-avatar`), and "start" is re-sent every 2 s until the first `viva.ui` (the agent joins the room before it listens to `viva.ctl`).
 - CLI: `uv run python scorecard.py ../demo/sample-log.jsonl ../demo/session-config.json`.

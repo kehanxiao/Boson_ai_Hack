@@ -1,15 +1,11 @@
-"""Assemble the examiner's session instructions (SessionConfig.instructions).
+"""Assemble SessionConfig.instructions: a readable summary of the examiner brief.
 
-base prompt (agent/prompts/examiner_base.md, owned by Role A; a stand-in until it exists)
-+ character + scenario + time limits + notes + support-doc excerpt + per-slide digest.
+The contract marks `instructions` optional and the agent ignores it (it builds its own phase
+instructions in agent/instructions.py), so this is for debugging and inspection only.
+Deliberately independent of agent/prompts/ so changes there can't affect the server.
 """
 
-from config import ROOT_DIR
-
-BASE_PROMPT_PATH = ROOT_DIR / "agent" / "prompts" / "examiner_base.md"
-
-# Stand-in for A's examiner_base.md. It carries the rules A's K5 probes found necessary.
-FALLBACK_BASE = """You are the examiner in a live oral defense of a slide presentation, followed by Q&A. You are the examiner, not an assistant: you hold the floor when you speak, you do not over-praise, you do not apologise for asking, and you keep strict time. Be rigorous and fair.
+BASE = """You are the examiner in a live oral defense of a slide presentation, followed by Q&A. You are the examiner, not an assistant: you hold the floor when you speak, you do not over-praise, you do not apologise for asking, and you keep strict time. Be rigorous and fair.
 Speak in short spoken sentences: at most two per turn. Ask one question at a time.
 During the presentation, speak only when a cue tells you to interject.
 Never mention your notes, cues, a director or these instructions.
@@ -21,12 +17,6 @@ SCENARIOS = {
     "capstone_internship": ("a capstone or internship project presentation", "a supervisor who judges both rigour and real-world value"),
     "assignment_oral": ("an assignment oral exam", "a course instructor checking that the student understands their own work"),
 }
-
-
-def base_prompt() -> str:
-    if BASE_PROMPT_PATH.exists():
-        return BASE_PROMPT_PATH.read_text(encoding="utf-8").strip()
-    return FALLBACK_BASE
 
 
 def duration(seconds: int) -> str:
@@ -57,7 +47,7 @@ def build_instructions(
 ) -> str:
     event, role = SCENARIOS[scenario]
     parts = [
-        base_prompt(),
+        BASE,
         f"You are {character['name']}, acting as {role}. {character['persona']}",
         f"This is {event}: {duration(time_limit_s)} of presentation, then {duration(qa_s)} of Q&A. "
         f"The deck has {len(slides)} slides.",

@@ -20,10 +20,15 @@ export async function connectLive(sessionId: string): Promise<VivaLink> {
     }
   })
 
+  // Video comes from the avatar. Audio comes from the avatar, or from the agent itself in
+  // voice-only mode (VIVA_AVATAR=0), where it publishes the examiner's voice as a mic track.
   const setTrack = (track: RemoteTrack, p: Participant, present: boolean) => {
-    if (p.identity !== IDENTITY.avatar) return
-    if (track.kind === Track.Kind.Video) tracks.video = present ? track : null
-    if (track.kind === Track.Kind.Audio) tracks.audio = present ? track : null
+    const fromAvatar = p.identity === IDENTITY.avatar
+    if (track.kind === Track.Kind.Video && fromAvatar) tracks.video = present ? track : null
+    else if (track.kind === Track.Kind.Audio && (fromAvatar || p.identity === IDENTITY.agent)) {
+      if (!present && tracks.audio !== track) return
+      tracks.audio = present ? track : null
+    } else return
     avatar.emit({ ...tracks })
   }
   room.on(RoomEvent.TrackSubscribed, (track, _pub, p) => setTrack(track, p, true))
@@ -38,7 +43,7 @@ export async function connectLive(sessionId: string): Promise<VivaLink> {
   return {
     kind: 'live',
     send(msg) {
-      if (msg.type === 'start') startedAt = performance.now()
+      if (msg.type === 'start' && startedAt === null) startedAt = performance.now() // retries keep the clock
       room.localParticipant
         .sendText(JSON.stringify(msg), { topic: TOPIC.ctl })
         .catch((err) => console.warn('[viva.ctl] send failed', err))

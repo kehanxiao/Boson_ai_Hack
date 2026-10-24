@@ -1,19 +1,25 @@
 import type { Phase } from '../lib/contract'
 import type { SessionView } from '../lib/sessionReducer'
+import type { LinkStatus } from '../lib/useVivaSession'
 
 interface Props {
   examiner: SessionView['examiner']
-  status: 'idle' | 'connecting' | 'running' | 'error'
+  status: LinkStatus
   onStart: () => void
   onPhase: (phase: Phase) => void
 }
 
+const PENDING: Partial<Record<LinkStatus, string>> = {
+  connecting: 'Connecting…',
+  waiting: 'Waiting for the examiner…',
+}
+
 /** Start, then manual phase buttons (sent as viva.ctl phase messages). */
 export function SessionControls({ examiner, status, onStart, onPhase }: Props) {
-  if (status === 'idle' || status === 'error' || status === 'connecting') {
+  if (status !== 'running') {
     return (
-      <button className="primary" onClick={onStart} disabled={status === 'connecting'}>
-        {status === 'connecting' ? 'Connecting…' : 'Start presentation'}
+      <button className="primary" onClick={onStart} disabled={status in PENDING}>
+        {PENDING[status] ?? 'Start presentation'}
       </button>
     )
   }

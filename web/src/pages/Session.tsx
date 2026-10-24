@@ -24,7 +24,7 @@ interface Props {
 export function Session({ sessionId, fake, speed, autostart = false }: Props) {
   const { config, error: configError } = useSessionConfig(sessionId)
   const [slide, setSlide] = useState(1)
-  const session = useVivaSession({ sessionId, fake, speed, onReplaySlide: setSlide })
+  const session = useVivaSession({ sessionId, fake, speed, onReplaySlide: setSlide, currentSlide: () => slide })
   const { view } = session
   const now = useClock(session.link, view.ended)
 
