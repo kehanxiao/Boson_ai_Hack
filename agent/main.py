@@ -36,6 +36,7 @@ AGENT_IDENTITY = "viva-agent"
 AVATAR_IDENTITY = "boson-avatar"
 PRESENTER_IDENTITY = "presenter"
 MAX_DURATION_S = 3600  # the account limit: the avatar leaves after this, so restart the agent for long sessions
+DUPLICATE_START_S = 10  # a start this soon after the exam began is the web's retransmission
 
 BOSON_KEY = os.environ["BOSON_API_KEY"]
 BOSON_BASE = os.environ.get("BOSON_BASE_URL", "https://api.boson.ai/v1")
@@ -212,6 +213,8 @@ async def run(session_id: str) -> None:
             try:
                 msg = json.loads(await reader.read_all())
                 if msg.get("type") == "start" and current.phase != "waiting":
+                    if current.phase != "ended" and current.elapsed() < DUPLICATE_START_S:
+                        return  # the web re-sends start until it hears from us: a duplicate, not a restart
                     await reset("Start pressed again")  # e.g. the page was reloaded
                 await current.on_ctl(msg)
             except (json.JSONDecodeError, KeyError, ValueError) as exc:

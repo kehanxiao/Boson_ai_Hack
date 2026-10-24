@@ -353,6 +353,8 @@ class ExamController:
         await self.realtime.ensure_connected()
         self.phase = "presentation"
         self.started = time.monotonic()
+        # The web re-sends {type:"start"} every 2 s until its first viva.ui message: answer at once.
+        await self.ui_state("listening")
         self.slog.start()
         self.slog.write("phase", phase="presentation")
         self.slog.write("slide", index=self.slide)
