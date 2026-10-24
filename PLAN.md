@@ -4,6 +4,7 @@
 > - **A: C0 passed.** Avatar + `higgs-realtime-1.5-preview` working.
 > - **K1, K2 and K4 passed (headless):** manual commits give a transcript and no auto-reply; `response.create` makes the examiner cut in while the presenter keeps talking (first audio +453 ms). Details in `agent/CLAUDE.md`.
 > - **Next for A:** K3 (cancel/truncate), K5 (switch to server VAD mid-session, code-switching, web search).
+> - **B: Stage 0 done.** `server/` (FastAPI via uv: `/token`, `GET /api/sessions/{id}` + slide PNGs + scorecard for `demo`) and `web/` (Vite + React + TS + livekit-client) are scaffolded. The `Session` page works against the fake agent at `/session/demo?fake=1`. `demo/deck.pdf` is a generated **placeholder** (`server/scripts/make_placeholder_deck.py`); replace it with the real export.
 > - This file is the single source of truth. Update the status line when a checkpoint passes.
 
 ## Context
