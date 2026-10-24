@@ -1,86 +1,75 @@
-"""The exam controller: phases, timer, director, holding the floor, reminders and acknowledgement.
+"""The exam controller: phases, timer, reminders, and turn-taking around the examiner's brain.
 
-Inputs:  presenter audio frames, viva.ctl messages, Realtime events, playback-finished callbacks.
+Inputs:  presenter audio frames, viva.ctl messages, Realtime events, brain decisions, playback-finished callbacks.
 Outputs: Realtime requests, viva.ui messages, session log lines.
 Design: PLAN.md "Core design decisions"; protocol facts: agent/CLAUDE.md.
 
-Every examiner utterance is one Realtime response. Utterances we ask for are tracked from
-request to "finished playing"; the server's own follow-up after a web search is tracked too.
+Two Higgs Realtime sessions hear the presenter:
+- the brain (brain.py) decides what the examiner does: stay silent, say a line, or check a claim on the web;
+- the voice speaks the brain's lines word for word through the avatar, and runs the web search.
+The code keeps a few rules around the brain: when it is asked (not right after she has spoken,
+unless the presenter is replying to her), time reminders and their acknowledgement, holding the
+floor, and stopping when the presenter talks over her.
+
+Every examiner utterance is one voice response. Utterances we ask for are tracked from request
+to "finished playing"; the server's own follow-up after a web search is tracked too.
 """
 
 import asyncio
 import base64
 import logging
+import random
 import re
 import time
 from collections import deque
 
 import instructions as prompts
-import traps as trapbook
-from director import Decision
+from brain import Brain, Decision
 from vad import PauseDetector
 
 log = logging.getLogger("viva.exam")
 
 HOLD_S = 1.5  # the examiner keeps the floor this long after starting to speak
 VAD_SILENCE_S = 0.6  # pause length that triggers a commit
-COOLDOWN_S = {"high": 20, "medium": 30, "low": 45}  # minimum gap between interjections
-FACTCHECK_COOLDOWN_S = 10  # fact-checks are worth it even soon after an interjection
-MAX_CHUNK_S = 10  # force a commit during long unbroken speech so the director isn't blind
+GAP_S = {"high": 5, "medium": 8, "low": 15}  # after she has spoken, this long before she cuts in on something new
+EXCHANGE_S = 20  # after she cuts in, the presenter's next words are a reply: the brain hears every pause
+FACTCHECK_SPACING_S = 10  # between two web searches
+MAX_CHUNK_S = 10  # force a commit during long unbroken speech so the brain isn't deaf
 # Watchdog: nothing may leave the examiner stuck "busy" (that would silence reminders and phases).
 REQUEST_TIMEOUT_S = 8  # response.create that never produced response.created
 SEARCH_TIMEOUT_S = 12  # server web_search whose follow-up answer never came
 PLAYBACK_SLACK_S = 4  # an utterance's playback_finished may be lost; give up this long after it should end
 MERGED_REPORT_SLACK_S = 1.0  # one avatar report also finishes queued utterances due to end within this margin
-PATIENCE_S = {"high": 1.0, "medium": 1.3, "low": 1.6}  # Q&A silence before the examiner replies
-NO_INTERJECTION_BEFORE_S = 20
+QA_PATIENCE_S = {"high": 1.6, "medium": 2.0, "low": 2.5}  # silence before a Q&A answer is judged: thinking time
+QA_SILENCE_S = 8  # nothing said this long in Q&A: the brain decides (rephrase, move on)
+QA_NUDGES = 3  # at most this many silence prompts per question
+QA_GRACE_S = 25  # past the Q&A time, the exchange under way may finish within this
 ACK_SILENCE_S = 1.0  # going quiet this long after a reminder counts as acknowledging it
 IGNORE_AFTER_S = 3.5  # still talking this long after a reminder means it was ignored
+BARGE_IN_S = 0.8  # presenter speech this long past the hold window stops her; "um" is shorter
+BARGEABLE = {"interjection", "qa", "greeting"}  # reminders, fact-checks and the verdict hold the floor
+GREETING_DELAY_S = 1.2  # Start was just clicked: let the presenter look up first
+# A voice response asked for within ~1 s of a brain response starts ~1.6-1.8 s later; after 0.8 s it starts in
+# ~0.36 s, so waiting is faster overall (probes/two_session_latency.py; both sessions share one API key).
+BRAIN_SETTLE_S = 0.8
 
 STT_PLACEHOLDER = "the transcription is not available"  # seen live from higgs-stt-3.1 when it fails
-BARGE_IN_S = 0.8  # presenter speech this long past the hold window cancels the examiner (Q&A); "um" is shorter
-MIN_ANSWER_WORDS = 3  # an answer to an interjection needs this many non-filler words before it is judged
-MIN_QA_ANSWER_WORDS = 5  # a Q&A answer needs this many: "Oh, we got here." (3) moved her on before (live run)
-QA_PATIENCE_S = {"high": 1.6, "medium": 2.0, "low": 2.5}  # silence before she replies in Q&A: thinking time
-AWAIT_REPLY_S = 25  # after an interjection, how long the examiner waits for the presenter's answer
-DEFERRED_FACTCHECK_S = 30  # a fact-check held back by its spacing rule is dropped if it can't fire within this
-# "Can I continue?" (live run: asked twice, ignored both times by the director as "procedural").
-# "Can you repeat the question?" (live run: asked four times in Q&A, and each time she moved on instead).
-REPEAT_ASK = re.compile(r"\b((can|could|would) you (please )?repeat|repeat (the|your|that|it)|please repeat|say (that|it) "
-                        r"again|pardon|come again|what was the question|what('s| is) the question|didn'?t (hear|catch)|"
-                        r"ulang|ulangi|apa pertanyaannya)\b|再说一遍|重复一下|什么问题", re.I)
-CONTINUE_ASK = re.compile(r"\b(can|may|shall|should|could) i (continue|go on|move on|carry on|proceed)\b|"
-                          r"\b(is that (ok|okay|fine|enough)|boleh lanjut|bisa lanjut)\b|可以继续", re.I)
-FILLERS = {"um", "uh", "uhm", "erm", "er", "ah", "oh", "hmm", "mm", "yeah", "yes", "no", "okay", "ok", "so", "well",
-           "right", "sorry", "like", "the", "a", "and", "i", "oke", "ya", "eh", "嗯", "啊", "哦"}
 ACK_WORDS = re.compile(r"\b(okay|ok|noted|yes|yep|got it|sure|understood|right|thanks|thank you|baik|oke|siap)\b", re.I)
 ACK_CJK = ("好的", "明白", "知道")
 URL = re.compile(r"https?://[^\s)\]>\"']+")
 INDONESIAN = re.compile(r"\b(saya|kami|kita|tidak|belum|sudah|bisa|itu|ini|yang|dengan|untuk|karena|tapi|jujur|apakah|waktu)\b", re.I)
+PREAMBLES = ("Hm, let me check that.", "Hang on, let me look that up.", "Wait, is that right? Let me check.")
 
 
-def content_words(text: str) -> int:
-    """Words that carry an answer: fillers ("um", "yeah", "okay") don't count. CJK characters count as words."""
-    cjk = sum(1 for ch in text if "一" <= ch <= "鿿")
-    words = [w for w in re.findall(r"[a-zA-Z']+", text.lower()) if w not in FILLERS]
-    return len(words) + cjk // 2
-
-
-def question_part(text: str) -> str:
-    """The sentences of an utterance that are questions ("Going back to slide 3: Better than what?")."""
-    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-    return " ".join(s for s in sentences if s.endswith("?"))
-
-
-def interrupts_on_minor(character: dict) -> bool:
-    """Only the strictest characters (strictness 5, e.g. The Skeptic) cut in for minor issues too."""
-    return int(character.get("strictness", 3)) >= 5
-
-
-def insists_allowed(character: dict) -> int:
-    """How often she re-asks a question the presenter ignored: 2 (strictness 5), 1 (3-4), 0 (lenient)."""
+def follow_ups(character: dict) -> int:
+    """How many replies she gets within one exchange (push back, insist): 3 (strictness 5), 2 (3-4), 1."""
     strictness = int(character.get("strictness", 3))
-    return 2 if strictness >= 5 else 1 if strictness >= 3 else 0
+    return 3 if strictness >= 5 else 2 if strictness >= 3 else 1
+
+
+def heard_part(text: str, fraction: float) -> str:
+    words = text.split()
+    return " ".join(words[:max(1, round(len(words) * min(1.0, max(0.0, fraction))))])
 
 
 def guess_lang(text: str) -> str:
@@ -92,26 +81,22 @@ def guess_lang(text: str) -> str:
 
 
 class ExamController:
-    def __init__(self, config, realtime, output, ui, slog, director, *, factcheck=True, reminder_before_s=120,
-                 traps: list | None = None):
+    def __init__(self, config, realtime, output, ui, slog, brain: Brain | None, *, factcheck=True,
+                 reminder_before_s=120):
         self.config = config
-        self.traps = traps or []  # prepared interjections (traps.py): fire without waiting for the director
-        self.realtime = realtime
+        self.realtime = realtime  # the voice
+        self.brain = brain
         self.output = output
         self.ui = ui
         self.slog = slog
-        self.director = director
         self.factcheck_enabled = factcheck
         self.reminder_before_s = reminder_before_s
 
         # The character drives interruption behaviour (PLAN.md "Character drives the examiner's behaviour").
         character = config["character"]
-        self.cooldown = COOLDOWN_S.get(character.get("interrupt_rate", "medium"), 30)
-        self.patience = PATIENCE_S.get(character.get("interrupt_rate", "medium"), 1.3)
-        self.minor_ok = interrupts_on_minor(character)
+        self.gap = GAP_S.get(character.get("interrupt_rate", "medium"), 8)
+        self.follow_ups = follow_ups(character)
         self.qa_patience = QA_PATIENCE_S.get(character.get("interrupt_rate", "medium"), 2.0)
-        self.max_insists = insists_allowed(character)
-        self.carry_over: list[str] = []  # questions ignored during the talk: asked first in Q&A
         self.last_slide = max((s["index"] for s in config.get("slides", [])), default=1)
 
         self.phase = "waiting"
@@ -126,23 +111,11 @@ class ExamController:
         self.pause_at: float | None = None  # when the latest pause was detected
         self.silent_since: float | None = None
         self.last_speech_start = 0.0
-        self.last_examiner_request = 0.0
-        self.answer_words = 0
-        self.answer_open_since = 0.0  # Q&A: speech counts as the answer only from when her question has played
-        self.current_question = ""  # the Q&A question on the table, for repeats
-        self.answer_text: list[str] = []  # Q&A: what the presenter said since the question played
-        self.pending_repeat = False  # they asked her to repeat while still talking: repeat at the next pause
         self.chunk_started_at = 0.0  # when the speech in the current chunk began
-        # After an interjection has played the presenter owes an answer: {"since", "asked", "answer": [chunks]}.
-        # The director judges the answer (acknowledge / keep waiting / fact-check) with that context.
-        self.awaiting: dict | None = None
-        self.pending_ack: str | None = None  # an acknowledgement decided while the presenter was still talking
-        self.deferred: tuple | None = None  # (decision, meta, at): a fact-check blocked only by its spacing rule
-        self.last_examiner_text = ""
         self.last_commit = 0.0
         self.chunk_slide = 1  # slide showing when the current chunk of speech began
         self.commits: deque[dict] = deque()  # per commit, in order: the chunk's slide and pause time
-        self.recent: deque[str] = deque(maxlen=8)
+        self.recent: deque[str] = deque(maxlen=12)  # transcripts, to re-seed a brain that reconnected
 
         # Examiner utterances: requested -> generating -> playing -> finished
         self._requested: dict | None = None
@@ -152,17 +125,23 @@ class ExamController:
         self.pending_metric: tuple[str, float] | None = None
         self.cancel_at: float | None = None
 
-        # Director, reminders, Q&A, fact-check
-        self.director_busy = False
-        self._director_next: tuple[str, dict] | None = None  # newest chunk that arrived while busy
-        self.interjections: list[str] = []
-        self.interjected_slides: set[int] = set()
-        self.last_interjection = -1e9
-        self.last_factcheck = -1e9
+        # Turn-taking around the brain
+        self.last_spoke_end = 0.0  # when her last utterance ended
+        self.exchange: dict | None = None  # {"until", "depth"}: the presenter is replying to her
+        self._reask: tuple | None = None  # a pause that came while the brain was deciding
+
+        # Reminders, Q&A, fact-check
         self.reminder: dict | None = None
-        self.questions: list[str] = []
-        self.qa_turn: asyncio.Task | None = None
+        self.quiet_until = 0.0  # after a reminder: the presenter's reaction is judged by the reminder logic
         self.factcheck: dict | None = None
+        self.last_factcheck = -1e9
+        self.answer_since: float | None = None  # Q&A: her question has played; the answer counts from here
+        self.answered = False  # Q&A: the presenter has spoken since her question
+        self.qa_quiet_since = 0.0
+        self.qa_nudges = 0
+        self.qa_over = False
+        self.qa_turn: asyncio.Task | None = None
+        self.fallback_questions = prompts.qa_questions(config)  # only if the brain is unavailable
         self._tasks: list[asyncio.Task] = []
 
         output.on_finished(lambda played, interrupted: self._spawn(self._playback_finished(played, interrupted)))
@@ -192,6 +171,13 @@ class ExamController:
     def examiner_audible(self) -> bool:
         return bool(self.playing) or bool(self._current and self._current.get("audio"))
 
+    @property
+    def brain_ok(self) -> bool:
+        return bool(self.brain and self.brain.connected)
+
+    def _audible(self) -> dict | None:
+        return self.playing[0] if self.playing else self._current if self._current and self._current.get("audio") else None
+
     async def ui_state(self, state: str) -> None:
         await self.ui.publish({"type": "state", "state": state})
 
@@ -208,20 +194,29 @@ class ExamController:
         while self.engaged and time.monotonic() < deadline:
             await asyncio.sleep(0.1)
 
+    async def note(self, text: str) -> None:
+        if self.brain_ok:
+            await self.brain.note(text)
+
     async def say(self, kind: str, cue: str, *, hold=False, max_tokens: int | None = 120, metric: str | None = None,
-                  ref: float | None = None) -> bool:
+                  ref: float | None = None, line: str | None = None, reply=False, retried=False) -> bool:
+        """One voice response. line: the brain's words (it knows what she said); reply: said within an exchange."""
         if self.engaged:
             return False
         phase = self.phase if self.phase in prompts.PHASES else "presentation"
-        self._requested = {"kind": kind, "hold": hold, "at": time.monotonic()}
-        self.last_examiner_request = time.monotonic()
-        self.answer_words = 0  # counts the presenter's real words since this request
-        if not await self.realtime.create_response(prompts.with_cue(self.config, phase, cue, self.interjections), max_tokens):
+        self._requested = {"kind": kind, "hold": hold, "at": time.monotonic(), "line": line, "reply": reply,
+                           "cue": cue, "max_tokens": max_tokens, "retried": retried}
+        settle = (self.brain.last_done + BRAIN_SETTLE_S - time.monotonic()) if self.brain else 0.0
+        if settle > 0:
+            await asyncio.sleep(settle)  # the voice is reserved meanwhile (_requested), so nothing else cuts in
+            if self._requested is None or self._requested.get("cue") != cue:
+                return False  # reset meanwhile (abort, watchdog)
+        if not await self.realtime.create_response(prompts.with_cue(self.config, phase, cue), max_tokens):
             self._requested = None
             return False
         if metric:
             self.pending_metric = (metric, ref or self.pause_at or time.monotonic())
-        if kind in ("interjection", "factcheck", "insist", "reminder", "escalation", "time_up"):
+        if kind in ("interjection", "factcheck", "reminder", "escalation", "time_up"):
             await self.ui_state("interjecting")
         return True
 
@@ -241,10 +236,16 @@ class ExamController:
     async def on_presenter_audio(self, frame) -> None:
         if self.phase in ("waiting", "ended") or not self.realtime.connected:
             return  # nothing to hear before Start; and never write to a closed connection
-        await self.realtime.append(bytes(frame.data))
+        pcm = bytes(frame.data)
+        await self.realtime.append(pcm)
+        if self.brain_ok:
+            await self.brain.append(pcm)
         self.vad.push(frame)
         if self.presenter_speaking and time.monotonic() - self.last_commit > MAX_CHUNK_S:
+            slide = self.chunk_slide
             await self._commit()  # long unbroken speech: chunk it anyway
+            if self.phase == "presentation":
+                await self._ask_brain({"phase": "presentation", "pause_at": time.monotonic(), "slide": slide})
 
     async def _commit(self) -> None:
         self.last_commit = time.monotonic()
@@ -254,6 +255,8 @@ class ExamController:
             self.commits.append(meta)
         elif outcome == "merged" and self.commits:
             self.commits[-1]["pause_at"] = meta["pause_at"]  # one transcript will cover both
+        if self.brain_ok:
+            await self.brain.commit()
         self.chunk_slide = self.slide
 
     async def on_speech_start(self) -> None:
@@ -266,26 +269,28 @@ class ExamController:
         if self.qa_turn:
             self.qa_turn.cancel()  # they are still answering
             self.qa_turn = None
-        if self.examiner_audible:
+        if self.answer_since is not None:
+            self.answered = True
+        u = self._audible()
+        if u is not None:
             if time.monotonic() < self.hold_until:
                 await self.ui_state("holding_floor")
-            if self.phase == "qa":
+            if u["kind"] in BARGEABLE:
                 self._spawn(self._maybe_barge_in())
 
     async def on_pause(self) -> None:
         self.presenter_speaking = False
         self.pause_at = time.monotonic()
         self.silent_since = self.pause_at - VAD_SILENCE_S
+        self.qa_quiet_since = self.pause_at
+        slide = self.chunk_slide
         await self._commit()  # queued by the client if a response is being generated
-        if self.phase == "qa" and self.pending_repeat and not self.engaged:
-            await self._repeat_question()
+        if self.phase == "presentation":
+            await self._ask_brain({"phase": "presentation", "pause_at": self.pause_at, "slide": slide})
         elif self.phase == "qa":
             if self.qa_turn:
                 self.qa_turn.cancel()
             self.qa_turn = self._spawn(self._qa_end_of_turn())
-        elif self.phase == "presentation" and self.pending_ack and not self.engaged:
-            cue, self.pending_ack = self.pending_ack, None  # decided while they were still talking
-            await self.say("ack", f"Make this point in your own words, the way you'd say it out loud, in one or two short sentences: {cue}", max_tokens=40, metric="answer_end_to_reply")
 
     async def on_slide(self, index: int) -> None:
         if index == self.slide:
@@ -294,10 +299,12 @@ class ExamController:
         self.slog.write("slide", index=index)
         summary = next((s.get("summary", "") for s in self.config.get("slides", []) if s["index"] == index), "")
         await self.realtime.add_note(f"[Context note: the presenter moved to slide {index}. {summary}]")
+        await self.note(f"[Slide {index} is showing now.]")
         if self.reminder and not self.reminder["acked"] and index == self.last_slide:
             await self.acknowledge("slide_jump")
 
     async def on_transcript(self, text: str) -> None:
+        """The voice session's transcript of a chunk: captions, the log, and reminder acknowledgement."""
         meta = self.commits.popleft() if self.commits else {"slide": self.slide, "pause_at": time.monotonic()}
         text = text.strip()
         if not text or text.lower().startswith(STT_PLACEHOLDER):
@@ -309,43 +316,9 @@ class ExamController:
         r = self.reminder
         if r and not r["acked"] and r["played_at"] and (ACK_WORDS.search(text) or any(w in text for w in ACK_CJK)):
             await self.acknowledge("phrase")
-        if self.phase == "presentation" and CONTINUE_ASK.search(text) and not self.engaged:
-            self.awaiting = self.pending_ack = None
-            await self.say("ack", "The presenter asked whether they may continue. Tell them in a few words that "
-                           "they may.", max_tokens=30)
-        elif self.phase == "presentation" and self.awaiting and REPEAT_ASK.search(text) and not self.engaged:
-            # They didn't catch her question: repeat it (same exchange), don't judge this as their answer.
-            await self.say("repeat", "The presenter asked you to repeat. Repeat your question slowly and simply, in "
-                           f"at most 20 words: {self.awaiting['asked']}", hold=True, max_tokens=60)
-        elif self.phase == "presentation":
-            if self.awaiting:
-                self.awaiting["answer"].append(text)
-                if content_words(text) < 2:
-                    return  # "okay", "haha": keep waiting, no director call
-            elif await self._try_trap(text, meta):
-                return  # a predicted weak claim: interjected at once, no director round-trip
-            self._spawn(self.maybe_direct(text, meta))
-        elif self.phase == "qa" and REPEAT_ASK.search(text) and self.current_question:
-            # "Can you repeat the question?" is not an answer: repeat the same question.
-            if self.qa_turn:
-                self.qa_turn.cancel()
-            if self.presenter_speaking or self.engaged:
-                self.pending_repeat = True
-            else:
-                await self._repeat_question()
-        elif self.phase == "qa":
-            # Only speech that began after her question finished playing is an answer (a reaction while
-            # she was still asking moved her on before the presenter had started answering).
-            if meta.get("started", 0.0) >= self.answer_open_since - 0.3:
-                self.answer_words += content_words(text)
-                self.answer_text.append(text)
-            # The transcript can land after the end-of-turn check ran: if this made it a real answer
-            # and the presenter has stopped, check again so the examiner doesn't wait forever.
-            if (self.answer_words >= MIN_QA_ANSWER_WORDS and not self.presenter_speaking
-                    and (self.qa_turn is None or self.qa_turn.done())):
-                self.qa_turn = self._spawn(self._qa_end_of_turn())
 
     async def on_realtime_event(self, kind: str, event: dict) -> None:
+        """Events from the voice session."""
         if kind == "response.created":
             # Ours, or the server's own follow-up after a web search.
             self._current = self._requested or {"kind": "factcheck_answer" if self.factcheck else "server", "hold": False}
@@ -356,6 +329,8 @@ class ExamController:
                 return  # cancelled by a barge-in: drop audio still in flight
             if u is not None and not u.get("audio"):
                 u["audio"] = True
+                if u.get("at"):
+                    log.info("voice: first audio %.0f ms after the request (%s)", (time.monotonic() - u["at"]) * 1000, u["kind"])
                 if u.get("hold"):
                     self.hold_until = time.monotonic() + HOLD_S
                 if self.pending_metric:
@@ -375,8 +350,13 @@ class ExamController:
                 return
             if u is None:
                 return
-            if u["kind"] in ("interjection", "factcheck_answer", "insist", "repeat") and self.phase == "presentation":
-                self._open_exchange(u["kind"])  # from now on the presenter owes an answer (not from playback end)
+            if event.get("response", {}).get("status") == "failed" and not u.get("audio"):
+                # Seen in the sim: "an upstream service call did not complete". Ask once more, else move on.
+                self.pending_metric = None
+                if u.get("cue") and not u.get("retried"):
+                    log.warning("voice response for %s failed; retrying once", u["kind"])
+                    self._spawn(self._retry(u))
+                    return
             if u.get("audio"):
                 # When it should have finished playing, with slack for the avatar (watchdog).
                 start = max(time.monotonic(), self.playing[-1]["play_end"] if self.playing else 0.0)
@@ -389,7 +369,12 @@ class ExamController:
         elif kind == "response.output_audio_transcript.done":
             text = event.get("transcript", "").strip()
             if text:
-                self.last_examiner_text = text  # what an answer would be answering
+                if self._current is not None:
+                    self._current["text"] = text
+                    if not self._current.get("line"):
+                        # Words the brain didn't write (greeting, reminders, a search result): tell it what she said.
+                        how = "looked it up and told them" if self._current["kind"] == "factcheck_answer" else "said"
+                        await self.note(f'[She {how}: "{text}"]')
                 entry = self.slog.write("examiner", slide=self.slide, text=text)
                 await self.ui.publish({"type": "caption", "role": "examiner", "text": text, "t": entry["t"]})
         elif kind == "conversation.item.input_audio_transcription.completed":
@@ -402,18 +387,133 @@ class ExamController:
             self._spawn(self._reconnect())
 
     async def _reconnect(self) -> None:
-        """Mid-exam drop: reconnect and carry on. The conversation history is lost, so re-seed context."""
+        """Mid-exam drop of the voice: reconnect and carry on. Its history is lost, but the brain has it."""
         await asyncio.sleep(0.5)
         try:
             if await self.realtime.ensure_connected():
                 self._requested, self._current = None, None
                 if self.phase != "presentation":
-                    await self.realtime.update_instructions(prompts.for_phase(self.config, self.phase, self.interjections))
+                    await self.realtime.update_instructions(prompts.for_phase(self.config, self.phase),
+                                                            tools=[] if self.phase == "qa" else None)
                 await self.realtime.add_note(f"[Context note: the connection was restored. The {self.phase} phase is under "
                                              f"way and the presenter is on slide {self.slide}. Continue the exam.]")
         except Exception as exc:
             log.error("realtime reconnect failed: %s", exc)
             await self.finish()
+
+    async def on_brain_closed(self) -> None:
+        if self.phase in ("presentation", "qa", "debrief"):
+            self._spawn(self._reconnect_brain())
+
+    async def _reconnect_brain(self) -> None:
+        """Mid-exam drop of the brain: reconnect and re-seed it with what was said so far."""
+        await asyncio.sleep(0.5)
+        try:
+            if self.brain and await self.brain.ensure_connected():
+                if self.phase != "presentation":
+                    await self.brain.update_instructions(prompts.brain(self.config, "qa"))
+                await self.brain.note(f"[The connection was restored. The {self.phase} is under way; slide {self.slide} "
+                                      f"is showing. Recently the presenter said: {' / '.join(self.recent)}]")
+        except Exception as exc:
+            log.error("brain reconnect failed: %s", exc)
+
+    # ------------------------------------------------------------------ the brain
+    def _in_exchange(self) -> bool:
+        x = self.exchange
+        return bool(x and time.monotonic() < x["until"] and x["depth"] < self.follow_ups)
+
+    def _may_cut_in(self) -> bool:
+        """Presentation: ask the brain at this pause? Not while she speaks, and not right after she has spoken,
+        unless the presenter is replying to her."""
+        now = time.monotonic()
+        if self.phase != "presentation" or self.engaged or not self.brain_ok or now < self.quiet_until:
+            return False
+        return self._in_exchange() or now - self.last_spoke_end >= self.gap
+
+    async def _ask_brain(self, ctx: dict, instructions: str | None = None, max_tokens: int | None = None) -> None:
+        if ctx["phase"] == "presentation" and not self._may_cut_in():
+            return
+        if not self.brain_ok:
+            return
+        if self.brain.thinking:
+            self._reask = (ctx, instructions, max_tokens)  # decide again on the newest audio, if that was silence
+            return
+        ctx = {**ctx, "reply": self._in_exchange()}
+        await self.brain.ask(ctx, instructions, max_tokens)
+
+    async def _ask_when_free(self, ctx: dict, instructions: str | None = None, max_tokens: int | None = None) -> bool:
+        """For asks that must not be lost (first question, verdict): wait for a decision in flight."""
+        for _ in range(40):
+            if not self.brain_ok:
+                return False
+            if not self.brain.thinking:
+                return await self.brain.ask(ctx, instructions, max_tokens)
+            await asyncio.sleep(0.1)
+        return False
+
+    async def on_brain_decision(self, d: Decision) -> None:
+        self._spawn(self._decide(d))  # never block the brain's event reader
+
+    async def _decide(self, d: Decision) -> None:
+        self.slog.write("director", action=d.action.lower(), cue=d.text, ms=d.ms, reason="higgs brain")
+        since = (time.monotonic() - d.ctx["pause_at"]) * 1000 if d.ctx.get("pause_at") else 0
+        log.info("brain %s (%d ms, %.0f ms after the pause): %s", d.action, d.ms, since, d.text or d.raw[:80])
+        if d.ctx.get("phase") != self.phase:
+            return  # asked in an earlier phase
+        reask, self._reask = self._reask, None
+        if d.action in ("SILENT", "INVALID") or not d.text:
+            if reask:
+                await self._ask_brain(*reask)  # audio that arrived during that decision
+            elif self.phase == "qa" and d.ctx.get("first") and not self.engaged:
+                await self._fallback_question(first=True)  # question time must start with a question
+            return
+        if self.engaged:
+            await self.note("[She did not get to say that: something else took the floor, so it was not heard.]")
+            return
+        if self.phase == "presentation":
+            if d.action == "CHECK":
+                await self.check(d.text, d.ctx)
+            else:
+                await self.interject(d.text, d.ctx)
+        elif self.phase == "qa":
+            if d.action == "END":
+                await self.enter_debrief(react=d.text)
+            elif d.action == "SAY":
+                self.answer_since = None  # the next answer counts from when this has played
+                await self.say("qa", prompts.say_exactly(d.text), max_tokens=100, metric="answer_end_to_reply",
+                               ref=d.ctx.get("pause_at"), line=d.text)
+
+    async def interject(self, line: str, ctx: dict) -> None:
+        slide = ctx.get("slide", self.slide)
+        entry = self.slog.write("interjection", slide=slide, reason=line)
+        await self.ui.publish({"type": "interjection", "slide": slide, "reason": line, "t": entry["t"]})
+        if not await self.say("interjection", prompts.say_exactly(line), hold=True, max_tokens=100,
+                              metric="pause_to_interjection", ref=ctx.get("pause_at"), line=line, reply=ctx.get("reply")):
+            await self.note("[She did not get to say that, so it was not heard.]")
+
+    async def check(self, claim: str, ctx: dict) -> None:
+        now = time.monotonic()
+        if not self.factcheck_enabled or now - self.last_factcheck < FACTCHECK_SPACING_S:
+            await self.note("[She could not look that up right now; nothing was said.]")
+            return
+        self.last_factcheck = now
+        self.factcheck = {"claim": claim, "sources": []}
+        slide = ctx.get("slide", self.slide)
+        entry = self.slog.write("interjection", slide=slide, reason=f"fact-check: {claim}")
+        await self.ui.publish({"type": "interjection", "slide": slide, "reason": f"fact-check: {claim}", "t": entry["t"]})
+        self.slog.write("factcheck", status="searching", claim=claim)
+        await self.ui.publish({"type": "factcheck", "status": "searching", "claim": claim})
+        preamble = random.choice(PREAMBLES)
+        await self.say("factcheck", f"Cut in and say only \"{preamble}\", then call web_search to verify this claim: "
+                       f"{claim}. You must search before stating any facts; do not answer from memory.",
+                       hold=True, max_tokens=None, metric="pause_to_interjection", ref=ctx.get("pause_at"))
+
+    async def _retry(self, u: dict) -> None:
+        await asyncio.sleep(0.3)
+        if self.phase == "ended" or not await self.say(u["kind"], u["cue"], hold=u.get("hold", False),
+                                                       max_tokens=u.get("max_tokens"), line=u.get("line"),
+                                                       reply=u.get("reply", False), retried=True):
+            await self._utterance_finished(u, interrupted=False)
 
     # ------------------------------------------------------------------ playback
     async def _playback_finished(self, played: float, interrupted: bool) -> None:
@@ -427,8 +527,8 @@ class ExamController:
             if self.cancel_at is not None:
                 await self.metric("cancel_to_silence", (time.monotonic() - self.cancel_at) * 1000)
                 self.cancel_at = None
-            for u in finished:
-                await self._utterance_finished(u, interrupted=True)
+            for i, u in enumerate(finished):
+                await self._utterance_finished(u, interrupted=True, played=played if i == 0 else 0.0)
         elif self.playing:
             # The avatar reports once when playback goes idle, so back-to-back utterances (a fact-check's
             # "Let me check that." and its answer) share one report: finish the oldest, plus any others
@@ -438,10 +538,27 @@ class ExamController:
             while self.playing and self.playing[0]["play_end"] <= now + MERGED_REPORT_SLACK_S:
                 await self._utterance_finished(self.playing.popleft(), interrupted=False)
 
-    async def _utterance_finished(self, u: dict, interrupted: bool) -> None:
-        kind = u["kind"]
+    async def _utterance_finished(self, u: dict, interrupted: bool, played: float = 0.0) -> None:
+        kind, now = u["kind"], time.monotonic()
+        self.last_spoke_end = now
+        text = u.get("text") or u.get("line") or ""
+        if interrupted and kind in BARGEABLE and text and played > 0:
+            heard = heard_part(text, played / max(u.get("audio_s", 0.0), 0.1))
+            self.slog.write("director", action="talked_over", cue=heard, ms=0, reason="presenter talked over her")
+            await self.note(f'[The presenter talked over her, so she stopped. Of "{text}" they heard only: "{heard}"]')
+            self.exchange = {"until": now + EXCHANGE_S, "depth": self.exchange["depth"] if self.exchange else 0}
+        elif kind in ("interjection", "greeting", "factcheck_answer"):
+            # The presenter's next words are a reply to her: the brain hears every pause. A reply of hers
+            # that asks nothing ("Okay, go on.") closes the exchange.
+            reply = u.get("reply") and self.exchange
+            if reply and "?" not in text:
+                self.exchange = None
+            else:
+                self.exchange = {"until": now + EXCHANGE_S, "depth": self.exchange["depth"] + 1 if reply else 0}
+
         if kind in ("reminder", "escalation") and self.reminder and not interrupted:
-            self.reminder["played_at"] = time.monotonic()
+            self.reminder["played_at"] = now
+            self.quiet_until = now + IGNORE_AFTER_S + 1.0
             self._spawn(self._watch_ack(self.reminder))
         elif kind == "time_up":
             await self.enter_qa()
@@ -453,18 +570,24 @@ class ExamController:
         elif kind == "verdict":
             await self.finish()
             return
-        if kind == "ack":
-            self.awaiting = None
-        elif kind in ("qa", "qa_repeat") and self.phase == "qa":
+        elif kind == "qa" and self.phase == "qa":
             # Her question has played (or the presenter cut in): the answer starts now.
-            self.answer_words, self.answer_open_since, self.answer_text = 0, time.monotonic(), []
+            self.answer_since, self.qa_quiet_since, self.qa_nudges = now, now, 0
+            self.answered = self.presenter_speaking
+            if self.qa_over:
+                self._spawn(self._qa_overtime())
         await self.idle_state()
 
     # ------------------------------------------------------------------ presentation
     async def begin(self) -> None:
-        # The server closes a Realtime session after 5 idle minutes, so the one opened at launch
+        # The server closes a Realtime session after 5 idle minutes, so the ones opened at launch
         # may be gone by the time the presenter presses Start.
         await self.realtime.ensure_connected()
+        if self.brain:
+            try:
+                await self.brain.ensure_connected()
+            except Exception as exc:
+                log.error("brain unavailable (%s): reminders and fixed questions only", exc)
         self.phase = "presentation"
         self.started = time.monotonic()
         # The web re-sends {type:"start"} every 2 s until its first viva.ui message: answer at once.
@@ -472,10 +595,16 @@ class ExamController:
         self.slog.start()
         self.slog.write("phase", phase="presentation")
         self.slog.write("slide", index=self.slide)
-        minutes = max(1, round(self.config.get("time_limit_s", 300) / 60))
-        await self.say("greeting", f"Greet the presenter in one sentence: good afternoon, they have {minutes} minutes, begin when ready.", max_tokens=50)
+        await self.note("[The exam starts now. Slide 1 is showing.]")
+        self._spawn(self._greet())
         self._spawn(self._timer())
         self._spawn(self._watchdog())
+
+    async def _greet(self) -> None:
+        await asyncio.sleep(GREETING_DELAY_S)
+        minutes = max(1, round(self.config.get("time_limit_s", 300) / 60))
+        await self.say("greeting", f"Greet the presenter in one sentence: good afternoon, they have {minutes} minutes, "
+                       "begin when ready.", max_tokens=50)
 
     async def _watchdog(self) -> None:
         while self.phase != "ended":
@@ -492,201 +621,36 @@ class ExamController:
                 await self.realtime.flush_pending_commit()
                 if self.factcheck is not None:
                     claim = self.factcheck["claim"]
+                    self._requested = None
                     await self.say("factcheck_answer", "Your web search did not return. In one or two short sentences, "
                                    f"say from what you know whether this claim is right, starting with the correction: {claim}",
                                    max_tokens=80)
-            if self.awaiting and now - self.awaiting["since"] > AWAIT_REPLY_S:
-                # Never answered: keep the question for Q&A, and let the director back in.
-                if self.awaiting["is_question"]:
-                    self.carry_over.append(self.awaiting["asked"])
-                self.awaiting = None
-            if self.deferred and self.phase == "presentation":
-                d, meta, at = self.deferred
-                if now - at > DEFERRED_FACTCHECK_S:
-                    self.deferred = None  # too late to be relevant
-                elif (not self.engaged and not self.awaiting and not self._reminder_open()
-                      and self._allowed(meta["slide"])[1]):
-                    self.deferred = None
-                    await self.interject(d, {**meta, "pause_at": now})
             while self.playing and now > self.playing[0]["expected_end"]:
                 u = self.playing.popleft()
                 log.warning("watchdog: no playback_finished for %s; assuming it finished", u["kind"])
                 await self._utterance_finished(u, interrupted=False)
-
-    def _open_exchange(self, kind: str) -> None:
-        """She has interrupted (or re-asked): the presenter owes an answer, judged by the director."""
-        now = time.monotonic()
-        if kind in ("insist", "repeat") and self.awaiting:
-            self.awaiting.update(since=now, answer=[])  # same question, asked again
-            return
-        text = self.last_examiner_text
-        question = question_part(text)
-        # She can insist on anything she actually asked, including a question at the end of a fact-check
-        # correction (live: the presenter moved on after one and she let it go). Only the question sentences
-        # are kept, so "The search confirms ..." is never carried into Q&A as if it were a question.
-        self.awaiting = {"since": now, "asked": question or text, "answer": [], "index": len(self.interjections) - 1,
-                         "insists": 0, "is_question": bool(question)}
-
-    def _allowed(self, slide: int) -> tuple[bool, bool]:
-        """(interjection allowed, fact-check allowed) right now, by cooldowns and caps."""
-        now = time.monotonic()
-        interject = now - self.last_interjection >= self.cooldown and slide not in self.interjected_slides
-        factcheck = self.factcheck_enabled and now - self.last_factcheck >= FACTCHECK_COOLDOWN_S \
-            and now - self.last_interjection >= FACTCHECK_COOLDOWN_S
-        return interject, factcheck
-
-    async def maybe_direct(self, latest: str, meta: dict) -> None:
-        if self.phase != "presentation" or self.elapsed() < NO_INTERJECTION_BEFORE_S:
-            return
-        if self.director_busy:
-            self._director_next = (latest, meta)  # don't drop it: decide on it right after the current call
-            return
-        interject_ok, factcheck_ok = self._allowed(meta["slide"])
-        awaiting = self.awaiting
-        if awaiting:
-            interject_ok = False  # one exchange at a time: the open interruption gets its answer first
-        if self.engaged or self._reminder_open() or not (interject_ok or factcheck_ok or awaiting):
-            return
-        self.director_busy = True
-        try:
-            d = await self.director.decide(
-                slide=meta["slide"], latest=latest, recent=list(self.recent)[:-1], earlier=self.interjections,
-                elapsed_s=self.elapsed(), factcheck_only=not interject_ok,
-                awaiting={"asked": awaiting["asked"], "answer": " ".join(awaiting["answer"])} if awaiting else None)
-        except Exception as exc:
-            log.warning("director failed: %s", exc)
-            d = None
-        finally:
-            self.director_busy = False
-            if self._director_next:
-                nxt, self._director_next = self._director_next, None
-                self._spawn(self.maybe_direct(*nxt))
-        if d is None:
-            return
-        self.slog.write("director", action=d.action, severity=d.severity, reason=d.reason, cue=d.cue, ms=d.ms)
-        log.info("director %s/%s (%d ms): %s", d.action, d.severity, d.ms, d.cue or d.reason)
-        if d.action == "acknowledge":
-            if not awaiting or self.awaiting is not awaiting or self.phase != "presentation":
-                return  # stale: that exchange is already over
-            self.awaiting = None
-            # Record what they answered, so in Q&A she doesn't claim it was never addressed (seen in the sim).
-            if 0 <= awaiting.get("index", -1) < len(self.interjections) and awaiting["answer"]:
-                answer = " ".join(awaiting["answer"])[:200]
-                self.interjections[awaiting["index"]] += f" (they answered: \"{answer}\")"
-            cue = d.cue or "Fine. Carry on."
-            if self.presenter_speaking or self.engaged:
-                self.pending_ack = cue  # deliver it at their next pause
-            else:
-                await self.say("ack", f"Make this point in your own words, the way you'd say it out loud, in one or two short sentences: {cue}", max_tokens=40,
-                               metric="answer_end_to_reply", ref=meta["pause_at"])
-            return
-        if d.action == "insist":
-            if not awaiting or self.awaiting is not awaiting or self.phase != "presentation":
-                return
-            await self._insist(awaiting, d.cue, meta)
-            return
-        interject_ok, factcheck_ok = self._allowed(meta["slide"])  # state may have moved on during the call
-        if self.awaiting:
-            interject_ok = False
-        if (d.action == "factcheck" and self.factcheck_enabled and not self.deferred
-                and (not factcheck_ok or self.awaiting)):
-            # Held back by spacing, or by a question still waiting for its answer: fire it when allowed.
-            self.deferred = (d, meta, time.monotonic())
-            return
-        if (d.action == "interject" and not interject_ok) or (d.action == "factcheck" and not factcheck_ok):
-            return
-        if d.action == "interject" and d.severity != "major" and not self.minor_ok:
-            return  # this character keeps minor points for the questions
-        if d.action == "none" or self.phase != "presentation" or self.engaged or self._reminder_open():
-            return
-        await self.interject(d, meta)
-
-    async def _try_trap(self, text: str, meta: dict) -> bool:
-        """Fire a prepared interjection if this chunk makes a predicted weak claim and the rules allow it now."""
-        trap = trapbook.match(self.traps, text, meta["slide"])
-        if (trap is None or self.engaged or self._reminder_open() or self.elapsed() < NO_INTERJECTION_BEFORE_S
-                or (trap.action == "factcheck" and not self.factcheck_enabled)):
-            return False
-        interject_ok, factcheck_ok = self._allowed(trap.slide)
-        d = Decision(action=trap.action, kind="factcheck" if trap.action == "factcheck" else "question_closed",
-                     severity="major", reason=f"prepared: {trap.reason}", cue=trap.cue, claim=trap.claim, ms=0)
-        meta = {**meta, "slide": trap.slide}
-        if trap.action == "factcheck" and not factcheck_ok:
-            if not self.deferred:
-                trap.used = True
-                self.deferred = (d, meta, time.monotonic())  # held back by spacing: fire when allowed
-            return trap.used
-        if trap.action == "interject" and not interject_ok:
-            return False  # spacing or one-per-slide: leave it to the director later
-        trap.used = True
-        self.slog.write("director", action=d.action, severity=d.severity, reason=d.reason, cue=d.cue, ms=0)
-        log.info("trap %s on slide %d: %s", d.action, trap.slide, d.cue)
-        await self.interject(d, meta)
-        return True
-
-    async def _insist(self, awaiting: dict, cue: str, meta: dict) -> None:
-        """The presenter moved on without answering. An examiner demands the answer; how many times
-        depends on the character (insists_allowed). Past that, the question is carried into Q&A."""
-        if not awaiting["is_question"]:
-            self.awaiting = None  # she made a correction, not a question: moving on is fine
-            return
-        if awaiting["insists"] < self.max_insists:
-            awaiting["insists"] += 1
-            cue = cue or "Hold on. You haven't answered my question."
-            await self.say("insist", "The presenter moved on without answering your question. Cut in firmly and hold "
-                           f"the floor. Make this point in your own words, the way you'd say it out loud, in one or two short sentences: {cue}", hold=True, max_tokens=60,
-                           metric="pause_to_interjection", ref=meta["pause_at"])
-            return
-        self.awaiting = None
-        self.carry_over.append(awaiting["asked"])
-        await self.say("ack", "The presenter still has not answered your question. Say in one short sentence that "
-                       "you will come back to it in the questions, then tell them to continue.", max_tokens=40)
-
-    async def interject(self, d, meta: dict) -> None:
-        slide = meta["slide"]
-        self.last_interjection = time.monotonic()
-        self.awaiting = self.pending_ack = None  # a new interruption replaces any open exchange
-        # Phrased as what the examiner did, so in Q&A a wrong claim isn't read as a fact to re-check.
-        self.interjections.append(f"you fact-checked and corrected: {d.claim}" if d.action == "factcheck"
-                                  else f"you challenged: {d.cue or d.reason}")
-        entry = self.slog.write("interjection", slide=slide, reason=d.reason)
-        await self.ui.publish({"type": "interjection", "slide": slide, "reason": d.reason, "t": entry["t"]})
-        if d.action == "factcheck":
-            self.last_factcheck = self.last_interjection
-            self.factcheck = {"claim": d.claim, "sources": []}
-            self.slog.write("factcheck", status="searching", claim=d.claim)
-            await self.ui.publish({"type": "factcheck", "status": "searching", "claim": d.claim})
-            # The slide digest may already hold the correction; the demo wants a visible search.
-            # Only a short preamble: the director sometimes writes the correction into the cue, which would
-            # give the answer away before the visible search.
-            preamble = d.cue if d.cue and len(d.cue.split()) <= 6 else "Let me check that."
-            await self.say("factcheck", f"Cut in and say only \"{preamble}\", then call web_search to "
-                           f"verify this claim: {d.claim}. You must search before stating any facts; do not answer from memory.",
-                           hold=True, max_tokens=None, metric="pause_to_interjection", ref=meta["pause_at"])
-        else:
-            self.interjected_slides.add(slide)
-            cue = d.cue or "What is your evidence for that?"
-            if slide < self.slide:
-                cue = f"Going back to slide {slide}: {cue}"  # they have already clicked on
-            await self.say("interjection", f"Interject now, cutting in while the presenter is mid-flow. Make this point in your own words, the way you'd say it out loud, in one or two short sentences: {cue}",
-                           hold=True, max_tokens=90, metric="pause_to_interjection", ref=meta["pause_at"])
+            if self.brain:
+                self.brain.check_stuck()
+            if (self.phase == "qa" and self.answer_since is not None and not self.presenter_speaking
+                    and not self.engaged and now - self.qa_quiet_since >= QA_SILENCE_S and self.qa_nudges < QA_NUDGES):
+                # Nothing more said: the brain decides whether to wait, rephrase or move on.
+                self.qa_nudges += 1
+                self.qa_quiet_since = now
+                await self.note(f"[{QA_SILENCE_S * self.qa_nudges} seconds without an answer from the presenter.]")
+                await self._qa_ask(now)
 
     async def _timer(self) -> None:
         limit = self.config.get("time_limit_s", 300)
-        if limit - self.reminder_before_s > NO_INTERJECTION_BEFORE_S:
+        if limit - self.reminder_before_s > 20:
             await asyncio.sleep(max(0.0, limit - self.reminder_before_s - self.elapsed()))
             if self.phase == "presentation":
                 minutes = max(1, round(self.reminder_before_s / 60))
-                await self.remind("t_minus_2", f"{minutes} minute{'s' if minutes > 1 else ''} left." )
+                await self.remind("t_minus_2", f"{minutes} minute{'s' if minutes > 1 else ''} left.")
         await asyncio.sleep(max(0.0, limit - self.elapsed()))
         if self.phase == "presentation":
             await self.remind("time_up", "Time is up. Stop there, please; we move to questions.")
 
-    def _reminder_open(self) -> bool:
-        return bool(self.reminder and not self.reminder["acked"])
-
     async def remind(self, kind: str, words: str) -> None:
-        self.awaiting = self.pending_ack = None  # the reminder takes over the floor; no stale acknowledgement after it
         await self.wait_idle(timeout=8)
         self.slog.write("reminder", reminder=kind)
         await self.ui.publish({"type": "reminder", "kind": kind, "acknowledged": None})
@@ -731,84 +695,81 @@ class ExamController:
                        "Move to your conclusion.\"", hold=True, max_tokens=60)
 
     # ------------------------------------------------------------------ Q&A
-    def _pick_questions(self) -> list[str]:
-        """Up to 4 questions: the main one of each weak slide not challenged during the talk, then follow-ups
-        (second questions, including on challenged slides). The GradeBook live run had only one question left."""
-        weak = [s for s in self.config.get("slides", []) if s.get("weak_points") and s.get("questions")]
-        main = [s["questions"][0] for s in weak if s["index"] not in self.interjected_slides]
-        follow_ups = [q for s in weak for q in s["questions"][1:2]]
-        # Questions the presenter ignored during the talk come first.
-        unanswered = [f"Earlier you did not answer this, so answer it now: {q}" for q in self.carry_over]
-        return list(dict.fromkeys(unanswered + main + follow_ups))[:4]
-
-    def next_question(self) -> str | None:
-        return self.questions.pop(0) if self.questions else None
-
     async def enter_qa(self) -> None:
         if self.phase != "presentation":
             return
         self.phase = "qa"
         self.reminder = None
-        self.questions = self._pick_questions()
+        self.exchange = None
         self.slog.write("phase", phase="qa")
         await self.ui_state("qa")
         # Web search off: in the first live run she re-ran the presentation's fact-check three times in Q&A.
-        await self.realtime.update_instructions(prompts.for_phase(self.config, "qa", self.interjections), tools=[])
+        await self.realtime.update_instructions(prompts.for_phase(self.config, "qa"), tools=[])
+        if self.brain_ok:
+            await self.brain.update_instructions(prompts.brain(self.config, "qa"))
         await self.wait_idle(timeout=8)
-        q = self.next_question() or "Ask your sharpest question about the weakest slide."
-        self.current_question = q
-        await self.say("qa", f"Thank the presenter in at most three words, then ask your first question in at most "
-                       f"20 words: {q}", max_tokens=70)
         self._spawn(self._qa_timer())
+        await self.note("[The presentation is over: question time starts now. Thank them in a few words, then ask "
+                        "your first question.]")
+        if not await self._ask_when_free({"phase": "qa", "pause_at": time.monotonic(), "first": True}):
+            await self._fallback_question(first=True)
 
     async def _qa_timer(self) -> None:
         await asyncio.sleep(self.config.get("qa_s", 120))
-        await self.enter_debrief()
+        if self.phase != "qa":
+            return
+        self.qa_over = True
+        await self.note("[Question time is up. When they have finished their current answer, END.]")
+        if self.answer_since is not None and self.answered and not self.presenter_speaking and not self.engaged:
+            await self._qa_ask(time.monotonic())
+        await asyncio.sleep(QA_GRACE_S)
+        if self.phase == "qa":
+            await self.enter_debrief()  # the exchange under way didn't finish in time
+
+    async def _qa_overtime(self) -> None:
+        """Time ran out while she was asking: give them a short window to answer, then close."""
+        await asyncio.sleep(QA_GRACE_S / 2)
+        if self.phase == "qa" and not self.answered and not self.engaged:
+            await self.enter_debrief()
 
     async def _qa_end_of_turn(self) -> None:
         await asyncio.sleep(max(0.0, self.qa_patience - VAD_SILENCE_S))  # thinking time: longer than in the talk
         if self.engaged:  # e.g. the cancelled reply after a barge-in is still winding down
             await self.wait_idle(timeout=3)
-        # Reply only to a real answer that began after her question had played: "um", "oh" or a reaction
-        # while she was still asking is not an answer (live runs: both moved her on too early).
-        if self.phase == "qa" and self.pending_repeat and not self.engaged:
-            await self._repeat_question()
-            return
-        said = " ".join(self.answer_text).strip()
-        if (self.phase == "qa" and not self.presenter_speaking and not self.engaged and said.endswith("?")
-                and content_words(said) < 12 and self.last_speech_start > self.answer_open_since):
-            # A short question back ("You mean the runtime?") asks for clarification, not the next question.
-            await self.say("qa_repeat", f"The presenter asked a clarifying question: \"{said}\". Answer it in one short "
-                           f"sentence, then restate your question in at most 20 words: {self.current_question}",
-                           max_tokens=80, metric="answer_end_to_reply")
-            return
-        if (self.phase == "qa" and not self.presenter_speaking and not self.engaged
-                and self.last_speech_start > self.answer_open_since and self.answer_words >= MIN_QA_ANSWER_WORDS):
-            q = self.next_question()
-            if q:
-                self.current_question = q
-                await self.say("qa", "React to the presenter's answer in at most one sentence, then ask, in at most 20 "
-                               f"words: {q}", max_tokens=80, metric="answer_end_to_reply")
-            else:
-                # Out of questions: straight to the verdict, reacting to this last answer first. (A separate
-                # "that was my last question" line got cut off live and repeated, then she re-asked a question.)
-                await self.enter_debrief(react_first=True)
+        if (self.phase == "qa" and self.answer_since is not None and self.answered and not self.presenter_speaking
+                and not self.engaged):
+            await self._qa_ask(self.pause_at or time.monotonic())
 
-    async def _repeat_question(self) -> None:
-        """They asked her to repeat: the same question again, slower and simpler. The answer window restarts."""
-        self.pending_repeat = False
-        await self.say("qa_repeat", "The presenter asked you to repeat the question. Repeat it slowly and simply, in at "
-                       f"most 20 words: {self.current_question}", max_tokens=60, metric="answer_end_to_reply")
+    async def _qa_ask(self, pause_at: float) -> None:
+        if not self.brain_ok:
+            await self._fallback_question()
+            return
+        instructions = None
+        if self.qa_over:
+            instructions = prompts.brain(self.config, "qa") + "\n\nQuestion time is over now: answer with END."
+        await self._ask_brain({"phase": "qa", "pause_at": pause_at}, instructions)
+
+    async def _fallback_question(self, first=False) -> None:
+        """The brain is unavailable: ask the prepared questions in order, then the verdict."""
+        if not self.fallback_questions or self.qa_over:
+            await self.enter_debrief()
+            return
+        q = self.fallback_questions.pop(0)
+        lead = "Thank the presenter in at most three words, then ask" if first else \
+            "React to the presenter's answer in at most one sentence, then ask"
+        await self.say("qa", f"{lead}, in at most 20 words: {q}", max_tokens=80, metric="answer_end_to_reply")
 
     async def _maybe_barge_in(self) -> None:
         await asyncio.sleep(max(0.0, self.hold_until - time.monotonic()) + BARGE_IN_S)
-        if self.phase == "qa" and self.presenter_speaking and self.examiner_audible:
+        u = self._audible()
+        if self.phase in ("presentation", "qa") and self.presenter_speaking and u is not None and u["kind"] in BARGEABLE:
+            log.info("barge-in: the presenter is talking over her (%s)", u["kind"])
             self.cancel_at = time.monotonic()
             await self.realtime.cancel()
             self.output.clear()
 
     # ------------------------------------------------------------------ debrief
-    async def enter_debrief(self, react_first: bool = False) -> None:
+    async def enter_debrief(self, react: str | None = None) -> None:
         if self.phase not in ("presentation", "qa"):
             return
         self.phase = "debrief"
@@ -818,11 +779,13 @@ class ExamController:
         await self.ui_state("debrief")
         await self.realtime.update_instructions(prompts.for_phase(self.config, "debrief"))
         await self.wait_idle(timeout=10)
-        react = ("First react to the presenter's last answer in one short sentence and say that concludes the "
-                 "questions. Then " if react_first else "")
-        await self.say("verdict", f"{react}Give your verdict in at most three sentences: one genuine strength, the "
-                       "biggest weakness, and one concrete fix. Start the verdict with the word Verdict.",
-                       max_tokens=200, metric="answer_end_to_reply" if react_first else None)
+        if react:
+            await self.say("closing", prompts.say_exactly(react), max_tokens=60, line=react)
+        # The voice gives the verdict: it heard the whole exam too. (Asked of the brain, it came back empty after
+        # an upstream error once and as "Hello. Let's begin." once; the voice's verdict was good both times.)
+        await self.wait_idle(timeout=10)
+        await self.say("verdict", "Give your verdict in at most three sentences: one genuine strength, the biggest "
+                       "weakness, and one concrete fix. Start the verdict with the word Verdict.", max_tokens=200)
 
     async def abort(self) -> None:
         """The presenter left or restarted: stop everything at once (the log is kept locally)."""

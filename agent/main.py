@@ -4,13 +4,13 @@
     VIVA_AVATAR=0 uv run main.py demo              # voice-only fallback (no avatar slot used)
 
 The browser (web/) joins the same room as "presenter" and sends viva.ctl messages; the
-SessionConfig comes from the server (server/), or from demo/session-config.json for "demo"
-when the server is not running.
+SessionConfig comes from the server (server/), or from demo/ for the fixed demo sessions
+when the server is not running. Two Higgs Realtime sessions hear the presenter: the brain
+decides (brain.py), the voice speaks through the avatar.
 """
 
 import argparse
 import asyncio
-import dataclasses
 import json
 import logging
 import os
@@ -26,8 +26,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 load_dotenv(HERE.parent / ".env")
 
 import instructions as prompts  # noqa: E402  (needs .env loaded first for the model names)
-import traps as traps_mod  # noqa: E402
-from director import Director  # noqa: E402
+from brain import Brain  # noqa: E402
 from exam import ExamController  # noqa: E402
 from output import AvatarOutput, VoiceOutput  # noqa: E402
 from realtime import RealtimeClient  # noqa: E402
@@ -144,6 +143,18 @@ def realtime_session(config: dict) -> dict:
     return session
 
 
+def brain_session(config: dict) -> dict:
+    """Text only, manual turns, no transcription: it listens to the audio itself (the voice session's
+    transcripts are the captions)."""
+    return {
+        "model": MODEL,
+        "instructions": prompts.brain(config, "presentation"),
+        "output_modalities": ["text"],
+        "audio": {"input": {"turn_detection": None}},
+        "max_output_tokens": 100,
+    }
+
+
 async def run(session_id: str) -> None:
     config = load_config(session_id)
     room_name = config.get("session_id", session_id)
@@ -154,6 +165,7 @@ async def run(session_id: str) -> None:
 
     room = rtc.Room()
     realtime: RealtimeClient | None = None
+    brain: Brain | None = None
     current: ExamController | None = None  # the exam in progress, or the next one waiting for Start
     try:
         await room.connect(os.environ["LIVEKIT_URL"], livekit_token(room_name, AGENT_IDENTITY))
@@ -168,23 +180,24 @@ async def run(session_id: str) -> None:
             if current:
                 await current.on_realtime_event(kind, event)
 
-        realtime = RealtimeClient(REALTIME_URL, BOSON_KEY, on_event)
+        async def on_decision(decision):
+            if current:
+                await current.on_brain_decision(decision)
 
-        # The examiner reads the slides before the talk: prepared interjections, built once per session.
-        try:
-            prepared = await traps_mod.build(config, cache_path=HERE / "runs" / f"{room_name}-traps.json",
-                                             curated_path=HERE / "prompts" / "traps" / f"{room_name}.json")
-        except Exception as exc:
-            log.warning("no prepared interjections (%s); the director handles everything", exc)
-            prepared = []
+        async def on_brain_closed():
+            if current:
+                await current.on_brain_closed()
+
+        realtime = RealtimeClient(REALTIME_URL, BOSON_KEY, on_event)
+        brain = Brain(REALTIME_URL, BOSON_KEY, on_decision, on_brain_closed)
 
         def new_exam() -> ExamController:
             slog = SessionLog(HERE / "runs" / f"{room_name}-{time.strftime('%Y%m%d-%H%M%S')}.jsonl")
-            return ExamController(config, realtime, output, LiveKitUI(room), slog, Director(config), factcheck=FACTCHECK,
-                                  traps=[dataclasses.replace(t) for t in prepared])  # fresh "used" flags per exam
+            return ExamController(config, realtime, output, LiveKitUI(room), slog, brain, factcheck=FACTCHECK)
 
         current = new_exam()
         await realtime.connect(realtime_session(config))
+        await brain.connect(brain_session(config))
 
         async def reset(reason: str) -> None:
             """Abort the exam in progress and get a fresh one ready (new Higgs conversation, new log)."""
@@ -195,7 +208,8 @@ async def run(session_id: str) -> None:
             old = current
             await old.abort()
             await old.aclose()
-            await realtime.close()  # the next Start reconnects with an empty conversation
+            await realtime.close()  # the next Start reconnects both with empty conversations
+            await brain.close()
             current = new_exam()
 
         async def forward(track):
@@ -247,6 +261,7 @@ async def run(session_id: str) -> None:
                 exam.slog.upload(SERVER, room_name)
                 await exam.aclose()
                 await realtime.close()
+                await brain.close()
                 current = new_exam()
                 log.info("exam complete; ready for the next Start")
             else:
@@ -257,6 +272,8 @@ async def run(session_id: str) -> None:
             await current.aclose()
         if realtime:
             await realtime.close()
+        if brain:
+            await brain.close()
         if avatar:
             release_avatar(avatar["id"])
         await room.disconnect()

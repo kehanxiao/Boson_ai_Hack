@@ -1,5 +1,17 @@
 # Viva: an AI examiner for presentation defenses (Higgs Audio Hackathon build plan)
 
+> **Decision (Sat 01:00): Higgs is the examiner's brain; the Haiku director and prepared interjections are retired.**
+> - **Why:** the live run felt "programmed". Deliberate errors were missed (the director had labelled them minor or held them back by cooldown), and talking over her did nothing.
+> - **The new design:**
+>   - A second, text-only Higgs Realtime session hears the same audio and answers `SILENT / SAY / CHECK` at each pause (`agent/brain.py`).
+>   - The voice session speaks the brain's lines word for word.
+>   - The code keeps only spacing, reminders, holding the floor and barge-in.
+> - **Measured:**
+>   - Higgs caught 6/6 planted errors in each of 3 runs at ~0.5 s per decision. Haiku caught 5–6/6 at 1.5–1.9 s (`agent/probes/higgs_brain.py`).
+>   - The full headless sims pass (`agent/probes/exam_sim.py demo|gradebook`).
+> - **Unchanged for B:** `viva.ui` / `viva.ctl` and the log format. The log's `director` lines now come from the brain (`action` is `say|check|silent|end|talked_over`).
+> - Details: `agent/CLAUDE.md` → "Higgs brain".
+>
 > **Status (Fri 21:55):**
 > - **A: C0 passed.** Avatar + `higgs-realtime-1.5-preview` working.
 > - **K1–K4 passed (headless)**, and K5 is done:

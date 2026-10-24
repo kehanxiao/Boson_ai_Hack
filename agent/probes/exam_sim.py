@@ -1,13 +1,13 @@
 """Stage 2 end-to-end check, headless: a synthetic presenter defends the demo deck.
 
-Real Higgs Realtime and a real Haiku director; no LiveKit, no avatar (playback is simulated
-in real time). The presenter's microphone stays open (silence between sentences). The script
+Real Higgs Realtime (brain and voice); no LiveKit, no avatar (playback is simulated in real
+time). The presenter's microphone stays open (silence between sentences). The script
 is event-driven: it waits for the examiner like a person would, except when it deliberately
 ignores the time reminder.
 
 Times are shortened: 140 s presentation, reminder at 95 s, 60 s of Q&A.
 
-    cd agent && uv run probes/exam_sim.py
+    cd agent && uv run probes/exam_sim.py [demo|gradebook]
 """
 
 import asyncio
@@ -19,14 +19,12 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import websockets  # noqa: E402
 from livekit import rtc  # noqa: E402
 
 from common import AUTH, REALTIME_URL, tts_pcm  # noqa: E402  (loads .env)
-import traps  # noqa: E402
-from director import Director  # noqa: E402
-from exam import ExamController  # noqa: E402
-from main import realtime_session  # noqa: E402
+from brain import Brain  # noqa: E402
+from exam import GREETING_DELAY_S, ExamController  # noqa: E402
+from main import brain_session, realtime_session  # noqa: E402
 from output import SimulatedOutput  # noqa: E402
 from realtime import RealtimeClient  # noqa: E402
 from session_log import SessionLog  # noqa: E402
@@ -36,7 +34,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 RATE, FRAME = 24_000, 480  # 20 ms frames
 T0 = time.monotonic()
 
-SCRIPT_A = [  # (slide, text, wait for the examiner first)
+# ERwait (demo/session-config.json). SCRIPT_A: (slide, text, wait for the examiner first)
+SCRIPT_A = [
     (1, "Hi everyone. Today I'm presenting ERwait, a system for forecasting emergency room wait times at a Toronto hospital network.", True),
     (2, "Long waits are a real problem. About one in twenty patients leave without being seen, so we forecast the next four hours of wait time.", True),
     (3, "And the headline result: our model is forty percent better, which is a big step forward for the hospital.", True),
@@ -61,6 +60,38 @@ QA = [
     "We validated on one hospital network only, so the Ontario claim is aspirational for now.",
 ]
 BARGE_IN = "Sorry, can I stop you there? I think I already answered that."
+
+# GradeBook (demo/session-config-coding.json): deliberate errors, one answered badly, one dodged.
+GB_SCRIPT_A = [
+    (1, "Hi everyone, I'm Sam Lee, and this is GradeBook, my Python program for ranking student grades.", True),
+    (2, "The task had three steps: read a CSV of names and scores, sort the students from lowest to highest, and print the top twenty.", True),
+    (2, "Oh, sorry, my mistake. Highest to lowest, and the top ten.", True),
+    (3, "We wrote our own bubble sort, because bubble sort is the fastest sorting algorithm.", True),
+    (3, "Anyway, moving on to the code.", True),  # dodges her question
+    (4, "The load function opens grades dot CSV and reads every row with the CSV reader.", True),
+    (3, "And Python's built-in sorted uses quicksort, so ours is just as good.", True),
+    (3, "Oh, right. Thanks.", True),
+    (5, "As a result, GradeBook is five times faster.", True),
+    (5, "Faster than our first version, which re-read the file for every student.", True),
+]
+GB_FILLER = [
+    "So on this slide we have the results table, and you can see the run time for each of the three files, the small one with fifty students, the medium one with two hundred, and the large one with five hundred students.",
+    "And then for each file we also printed the top ten list and the average, and we checked by hand that the average matched what a spreadsheet gives us, and it did for all three files.",
+]
+GB_SCRIPT_C = [
+    (6, "Okay, sorry. Wrapping up.", False),
+    (6, "We tested it on three files, and it's bug-free and ready for any school.", True),
+]
+GB_QA = [
+    "If there's a header row it would crash, because we unpack every row into two values. We didn't handle that.",
+    "Jujur saja, kami belum test file yang kosong. But I think sorted would be faster for big classes.",
+    "We timed it once on my laptop, so it's only one run.",
+]
+DECKS = {
+    "demo": {"config": "session-config.json", "a": SCRIPT_A, "filler_slide": 6, "filler": FILLER, "c": SCRIPT_C, "qa": QA},
+    "gradebook": {"config": "session-config-coding.json", "a": GB_SCRIPT_A, "filler_slide": 5, "filler": GB_FILLER,
+                  "c": GB_SCRIPT_C, "qa": GB_QA, "time_limit_s": 190},  # longer script: reminder after slide 5
+}
 
 
 def now() -> float:
@@ -108,28 +139,29 @@ class Mic:
 async def wait_examiner(c: ExamController, timeout=30.0) -> None:
     await asyncio.sleep(0.6)
     deadline = time.monotonic() + timeout
-    while (c.engaged or c.director_busy) and time.monotonic() < deadline:
+    while (c.engaged or (c.brain and c.brain.thinking)) and time.monotonic() < deadline:
         await asyncio.sleep(0.1)
     await asyncio.sleep(0.5)
 
 
-async def presenter(c: ExamController, mic: Mic) -> None:
+async def presenter(c: ExamController, mic: Mic, deck: dict) -> None:
     await c.on_ctl({"type": "start"})
-    for slide, text, wait in SCRIPT_A:
+    await asyncio.sleep(GREETING_DELAY_S)  # her greeting comes first
+    for slide, text, wait in deck["a"]:
         await c.on_ctl({"type": "slide", "index": slide})
         if wait:
             await wait_examiner(c)
         await mic.say(text)
     await wait_examiner(c)
-    await c.on_ctl({"type": "slide", "index": 6})
-    i = 0
+    await c.on_ctl({"type": "slide", "index": deck["filler_slide"]})
+    filler, i = deck["filler"], 0
     while not (c.reminder and (c.reminder.get("played_at") or c.reminder.get("escalated"))):
-        await mic.say(FILLER[i % len(FILLER)])  # ramble until the reminder has played
+        await mic.say(filler[i % len(filler)])  # ramble until the reminder has played
         i += 1
     if not c.reminder.get("escalated"):
-        await mic.say(FILLER[i % len(FILLER)])  # ...and ignore it: keep talking
+        await mic.say(filler[i % len(filler)])  # ...and ignore it: keep talking
     await wait_examiner(c)  # the escalation
-    for slide, text, wait in SCRIPT_C:
+    for slide, text, wait in deck["c"]:
         if c.phase != "presentation":
             break
         await c.on_ctl({"type": "slide", "index": slide})
@@ -138,7 +170,7 @@ async def presenter(c: ExamController, mic: Mic) -> None:
         await mic.say(text)
     while c.phase == "presentation":
         await asyncio.sleep(0.2)
-    for answer in QA:
+    for answer in deck["qa"]:
         await wait_examiner(c)
         if c.phase != "qa":
             return
@@ -155,9 +187,11 @@ async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     for noisy in ("livekit", "httpx", "anthropic"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
-    config = json.loads((ROOT / "demo" / "session-config.json").read_text(encoding="utf-8"))
-    config.update({"time_limit_s": 140, "qa_s": 60})
-    log_path = pathlib.Path(__file__).resolve().parent / ".cache" / "exam-sim-log.jsonl"
+    name = sys.argv[1] if len(sys.argv) > 1 else "demo"
+    deck = DECKS[name]
+    config = json.loads((ROOT / "demo" / deck["config"]).read_text(encoding="utf-8"))
+    config.update({"time_limit_s": deck.get("time_limit_s", 140), "qa_s": 60})
+    log_path = pathlib.Path(__file__).resolve().parent / ".cache" / f"exam-sim-{name}.jsonl"
     slog = SessionLog(log_path)
 
     controller: ExamController | None = None
@@ -166,14 +200,20 @@ async def main() -> None:
         if controller:
             await controller.on_realtime_event(kind, event)
 
-    realtime = RealtimeClient(REALTIME_URL, AUTH["Authorization"].split(" ", 1)[1], on_event)
-    prepared = await traps.build(config, cache_path=ROOT / "agent" / "runs" / "demo-traps.json")
-    controller = ExamController(config, realtime, SimulatedOutput(), PrintUI(now), slog, Director(config),
-                                reminder_before_s=45, traps=prepared)
+    async def on_decision(d):
+        print(f"{now():7.2f}s  BRAIN {d.action} {d.ms} ms: {d.text or d.raw[:60]}", flush=True)
+        if controller:
+            await controller.on_brain_decision(d)
+
+    key = AUTH["Authorization"].split(" ", 1)[1]
+    realtime = RealtimeClient(REALTIME_URL, key, on_event)
+    brain = Brain(REALTIME_URL, key, on_decision)
+    controller = ExamController(config, realtime, SimulatedOutput(), PrintUI(now), slog, brain, reminder_before_s=45)
     await realtime.connect(realtime_session(config))
+    await brain.connect(brain_session(config))
     await asyncio.sleep(1.5)
     mic = Mic(controller)
-    script = asyncio.create_task(presenter(controller, mic))
+    script = asyncio.create_task(presenter(controller, mic, deck))
     try:
         await asyncio.wait_for(controller.ended.wait(), timeout=330)
     except asyncio.TimeoutError:
@@ -182,10 +222,11 @@ async def main() -> None:
     mic.task.cancel()
     await controller.aclose()
     await realtime.close()
-    report(log_path)
+    await brain.close()
+    report(log_path, name)
 
 
-def report(path: pathlib.Path) -> None:
+def report(path: pathlib.Path, name: str) -> None:
     entries = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     kinds = [e["kind"] for e in entries]
     phases = [e["phase"] for e in entries if e["kind"] == "phase"]
@@ -194,15 +235,28 @@ def report(path: pathlib.Path) -> None:
     fc_start = next((e["t"] for e in entries if e["kind"] == "factcheck" and e.get("status") == "searching"), None)
     after_fc = " ".join(e["text"] for e in examiner if fc_start is not None and e["t"] >= fc_start)
     langs = {e.get("lang") for e in entries if e["kind"] == "chunk"}
+    interjected = {e["slide"] for e in entries if e["kind"] == "interjection"}
+    deck_checks = {
+        "demo": {
+            "interjection on slide 3": 3 in interjected,
+            "fact-check searched and finished": bool(fc_done),
+            "fact-check names Microsoft": "microsoft" in after_fc.lower(),
+        },
+        "gradebook": {
+            "interjection on slide 2 (order, top 20)": 2 in interjected,
+            "interjection on slide 3 (bubble sort)": 3 in interjected,
+            "interjection on slide 5 (5x faster)": 5 in interjected,
+            "fact-check searched and finished": bool(fc_done),
+        },
+    }[name]
     checks = {
-        "interjection on slide 3": any(e["kind"] == "interjection" and e["slide"] == 3 for e in entries),
-        "fact-check searched and finished": bool(fc_done),
-        "fact-check names Microsoft": "microsoft" in after_fc.lower(),
+        **deck_checks,
         "reminder -> escalation -> ack": all(k in kinds for k in ("reminder", "escalation", "ack")),
         "phases presentation/qa/debrief/end": phases == ["presentation", "qa", "debrief", "end"],
         "verdict spoken": any("verdict" in e["text"].lower() for e in examiner),
-        "no 'already covered' question in Q&A": not any(("forty percent" in e["text"].lower() or "40%" in e["text"]) and e["t"] > (
+        "(info) Q&A mentions forty percent": name != "demo" or not any(("forty percent" in e["text"].lower() or "40%" in e["text"]) and e["t"] > (
             next((p["t"] for p in entries if p["kind"] == "phase" and p.get("phase") == "qa"), 1e9)) for e in examiner),
+        "talking over her registered": any(e["kind"] == "director" and e.get("action") == "talked_over" for e in entries),
         "only contract log kinds": set(kinds) <= {"chunk", "examiner", "director", "interjection", "reminder", "ack",
                                                  "escalation", "phase", "slide", "factcheck"},
     }
@@ -211,11 +265,8 @@ def report(path: pathlib.Path) -> None:
         print(f"{name:40s} {'PASS' if ok else 'FAIL'}")
     # Informational: the TTS voice's Indonesian/Mandarin accent decides what the STT hears.
     print(f"{'(info) chunk languages detected':40s} {sorted(langs)}")
-    metrics = {}
-    for e in entries:
-        if e["kind"] == "director":
-            metrics.setdefault("director_ms", []).append(e.get("ms"))
-    print(f"{'(info) director call ms':40s} {metrics.get('director_ms')}")
+    brain_ms = [e.get("ms") for e in entries if e["kind"] == "director" and e.get("action") != "talked_over"]
+    print(f"{'(info) brain decision ms':40s} {brain_ms}")
     print(f"log: {path} ({len(entries)} lines); examiner lines:")
     for e in examiner:
         print(f"  {e['t']:6.1f}s  {e['text'][:140]}")

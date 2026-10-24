@@ -26,7 +26,8 @@ MIN_COMMIT_BYTES = 24_000 * 2 // 10  # 100 ms of 24 kHz 16-bit mono: the server'
 
 
 class RealtimeClient:
-    def __init__(self, url: str, api_key: str, on_event: EventHandler):
+    def __init__(self, url: str, api_key: str, on_event: EventHandler, name: str = "voice"):
+        self.name = name  # "voice" or "brain": both sessions log through here
         self.url = url
         self.headers = {"Authorization": f"Bearer {api_key}"}
         self.on_event = on_event
@@ -56,7 +57,7 @@ class RealtimeClient:
         timeout while waiting for the presenter). Returns True if a new connection was made."""
         if self.connected:
             return False
-        log.warning("realtime: reconnecting")
+        log.warning("realtime %s: reconnecting", self.name)
         self.response_active = self.server_tool_pending = self._pending_commit = self._awaiting_created = False
         self._uncommitted = 0
         await self.connect(self._session)
@@ -72,7 +73,7 @@ class RealtimeClient:
         try:
             await self.ws.send(json.dumps(event))
         except websockets.ConnectionClosed:
-            log.warning("realtime: dropped %s (connection closed)", event.get("type"))
+            log.warning("realtime %s: dropped %s (connection closed)", self.name, event.get("type"))
 
     async def append(self, pcm: bytes) -> None:
         self._uncommitted += len(pcm)
@@ -115,12 +116,13 @@ class RealtimeClient:
     def busy(self) -> bool:
         return self.response_active or self.server_tool_pending
 
-    async def create_response(self, instructions: str, max_output_tokens: int | None = None) -> bool:
+    async def create_response(self, instructions: str | None = None, max_output_tokens: int | None = None) -> bool:
+        """None: the session's instructions apply."""
         if self.busy:
             return False
         self.response_active = True
         self._awaiting_created = True
-        response: dict = {"instructions": instructions}
+        response: dict = {"instructions": instructions} if instructions else {}
         if max_output_tokens:
             response["max_output_tokens"] = max_output_tokens
         await self.send({"type": "response.create", "response": response})
@@ -152,14 +154,14 @@ class RealtimeClient:
                 event = json.loads(message)
                 kind = event["type"]
                 self._track(kind, event)
-                if kind != "response.output_audio.delta":
+                if kind not in ("response.output_audio.delta", "response.output_text.delta"):
                     self._log(kind, event)
                 await self.on_event(kind, event)
         except websockets.ConnectionClosed:
             pass
         # A normal close (code 1000, e.g. the idle timeout) ends the loop without raising.
         close = getattr(self.ws, "close_reason", None) or ""
-        log.warning("realtime connection closed: %s %s", getattr(self.ws, "close_code", None), close)
+        log.warning("realtime %s connection closed: %s %s", self.name, getattr(self.ws, "close_code", None), close)
         await self.on_event("connection.closed", {"code": getattr(self.ws, "close_code", None), "reason": close})
 
     def _track(self, kind: str, event: dict) -> None:
@@ -182,11 +184,12 @@ class RealtimeClient:
             self._awaiting_created = False
             self.response_active = False
 
-    @staticmethod
-    def _log(kind: str, event: dict) -> None:
+    def _log(self, kind: str, event: dict) -> None:
         if kind == "error":
             err = event.get("error", {})
-            log.warning("realtime error %s: %s", err.get("type"), err.get("message"))
+            log.warning("realtime %s error %s: %s", self.name, err.get("type"), err.get("message"))
+        elif self.name == "brain":
+            return  # the brain's decisions are logged by the exam; its routine events would only add noise
         elif kind == "response.done":
             log.info("response.done status=%s", event.get("response", {}).get("status"))
         elif kind == "conversation.item.added":

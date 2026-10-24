@@ -2,26 +2,31 @@
 
 A hand-built worker: joins the LiveKit room, starts a Higgs Avatar session, and drives a raw Higgs Realtime WebSocket. It owns turn-taking: VAD commits, the director, holding the floor, the timer and phases. Design rationale: `PLAN.md` → "Core design decisions" and "Architecture".
 
-## Files (Stage 2)
-- `main.py`: live entry point (`uv run main.py [session_id]`, `VIVA_AVATAR=0` for voice-only, `VIVA_FACTCHECK=0`). Joins the room, starts the avatar (429 retry), loads SessionConfig from the server (falls back to `demo/session-config.json` for `demo`), forwards presenter audio, handles `viva.ctl`, releases the avatar with retries, uploads the log.
-- `exam.py`: `ExamController`, the whole exam logic.
-  - phases and timer
-  - director gating (cooldown per `interrupt_rate`, none in the first 20 s, at most 1 per slide)
-  - holding the floor (1.5 s), reminder → acknowledgement (phrase / silence / jump to the last slide) → one escalation
-  - Q&A end-of-turn (patience per `interrupt_rate`) and barge-in (cancel + clear + truncate)
-  - fact-check, debrief verdict
+## Files
+**Two Higgs Realtime sessions hear the presenter** (since Sat 01:00; see "Higgs brain" below):
+- the **brain** (`brain.py`, text only) decides what the examiner does;
+- the **voice** speaks the brain's lines word for word through the avatar, transcribes for captions, and runs the web search.
+
+- `main.py`: live entry point (`uv run main.py [session_id]`, `VIVA_AVATAR=0` for voice-only, `VIVA_FACTCHECK=0`). Joins the room, starts the avatar (429 retry), loads SessionConfig from the server (falls back to `demo/` for `demo` and `gradebook`), connects both sessions, forwards presenter audio, handles `viva.ctl`, releases the avatar with retries, uploads the log.
+- `brain.py`: the brain session. When asked, it answers one line: `SILENT`, `SAY: <words>`, `CHECK: <claim>`, or (Q&A) `END: <words>`. It gets the same audio and commits as the voice, plus `[bracketed]` notes: the slide, what she said that it didn't write (greeting, reminders, search results), and being talked over.
+- `exam.py`: `ExamController`, the exam logic around the brain. The rules it keeps:
+  - **When the brain is asked:** at each presenter pause, except while she speaks, and for `GAP_S` (8 s for medium) after she has spoken. The exception is an exchange: after she cuts in, every pause for 20 s is a reply, up to `follow_ups` replies (by strictness). Q&A: at each pause after the patience delay, or after 8 s of silence.
+  - **Holding the floor:** 1.5 s. Reminder → acknowledgement (phrase / silence / jump to the last slide) → one escalation.
+  - **Talked over** (both phases): her brain lines and Q&A questions stop 0.8 s past the hold window (cancel + clear + truncate), and the brain is told what the presenter heard. Reminders, fact-checks and the verdict hold the floor.
+  - **Q&A time-up:** the exchange under way may finish (25 s grace), then the brain ENDs and writes the verdict.
   - It tracks every utterance from request to finished playing, including the server's own follow-up after a web search.
-- `realtime.py`: WS client. Queues commits during a response, refuses `response.create` while busy or while a server tool is pending. One-line logging, no base64.
-- `director.py`: Haiku decision (`action none|interject|factcheck`, `kind`, `reason`, `cue`, `claim`), structured output, `effort: low`.
-- `instructions.py` + `prompts/`: per-phase examiner instructions, and per-response instructions (prompt + cue).
+- `realtime.py`: WS client for both sessions (`name` for logs). Queues commits during a response, refuses `response.create` while busy or while a server tool is pending. One-line logging, no base64.
+- `director.py` + `prompts/director.md`: the former Haiku director, now only used by `probes/higgs_brain.py` for comparison.
+- `instructions.py` + `prompts/`: the brain's instructions per phase (`brain.md` + `brain()`), and the voice's per-phase and per-response instructions (`examiner_base.md`, `say_exactly()`).
 - `vad.py`: Silero pause detector (0.6 s). `output.py`: avatar / voice-only / simulated playback with per-utterance finished callbacks.
 - `session_log.py`: JSONL in the contract format, uploaded as raw `application/x-ndjson`. `ui.py`: `viva.ui` publisher (LiveKit, or print for sims).
-- `probes/exam_sim.py`: headless end-to-end exam on the demo deck (real Higgs + Haiku, simulated playback).
+- `probes/exam_sim.py [demo|gradebook]`: headless end-to-end exam (real Higgs brain + voice, simulated playback).
+- `probes/higgs_brain.py [runs]`: the brain experiment: Higgs (hears audio) vs the Haiku director (reads transcripts) on planted errors.
 - `stage0_avatar.py` + `viewer.html`: the Stage 0 check, kept for quick avatar smoke tests.
 
 Stack: uv, Python 3.12, `livekit-agents` 1.8.8 (for `DataStreamAudioOutput`), `livekit-plugins-silero` 1.8.8, `websockets`, `anthropic`, `python-dotenv`.
 
-**Director latency** (Haiku 5.5, `effort: low`): **~0.9–1.3 s**, mostly network. At low effort there are no thinking blocks, and `thinking: disabled` was no faster. Expected pause → interjection ≈ 0.6 s VAD + ~0.4 s transcript + ~1 s director + ~0.45 s first audio ≈ **2.5 s**, plus the avatar render.
+**Expected pause → interjection** ≈ 0.6 s VAD + ~0.45 s brain + ~0.45 s first audio ≈ **1.5 s**, plus the avatar render. No transcript is waited for: the brain hears the audio. (The Haiku director path was ≈ 2.5 s.)
 
 ## Starting point
 `docs/vendor/boson/models/higgs-avatar/realtime-sessions.md`, the hand-built `agent.py` walkthrough:
@@ -94,6 +99,30 @@ Stack: uv, Python 3.12, `livekit-agents` 1.8.8 (for `DataStreamAudioOutput`), `l
 - **Director latency in a live run: ~0.9–3.4 s, median ~2 s** (variable). Pause → interjection measured **2.0 s** ("40%") and **3.3 s** (fact-check), excluding the avatar. If that feels slow live, the fallback is a local model on the 5090 via LM Studio.
 - **Q&A:** answer end → reply **~1.1 s**. Questions skip slides already handled by an interjection. The Q&A instructions list the points already raised, so she doesn't re-ask them.
 - **The sim's Indonesian and Mandarin come from an English TTS voice and transcribe as English gibberish.** Real speech worked in Stage 0, so language checks in the sim are informational only.
+
+## Higgs brain (Sat 00:30–02:30, `probes/higgs_brain.py`, `probes/exam_sim.py`)
+- **Why:** in the live GradeBook run the Haiku director noticed the planted errors but labelled them minor or was held back by the cooldown. Talking over her did nothing, and it felt "programmed".
+- **Experiment** (10 TTS chunks, 6 planted errors, 3 runs):
+  - **Higgs** (text-only Realtime, hears the audio): caught 6/6 every run, 0 malformed answers, median ~0.45 s (max 0.58 s).
+  - **Haiku** (reads transcripts): caught 5/6, 5/6 and 6/6, median ~1.5–1.9 s (max 4 s).
+  - Higgs's 3 "false alarms" per run were fair examiner moves: a contradiction with "top twenty" said a minute earlier, the header-row bug, pressing after "um, so, yeah".
+- **Why two sessions and not the voice deciding:**
+  - An audio response can't be silent.
+  - The voice refuses commits and responses while it speaks or searches.
+  - Dozens of SILENT turns would fill her spoken conversation, and this model has read hidden notes aloud before.
+- ⚠️ **Format compliance depends on prompt order.** Start the instructions with "Every answer you give is exactly one line that starts with SILENT, SAY: or CHECK:".
+  - With the format block only at the end, after a speaking-style paragraph, Higgs wrote good spoken lines without the tag 8–10 times in 10 (ablation via `--prompt-file`).
+  - With that first line it was 0 in 10.
+  - Transcription on or off and a note before every chunk made no difference.
+- **No transcription on the brain:** it hears the audio itself. Captions and the log come from the voice session's STT.
+- **It prefers correcting from memory over CHECK** ("sorted uses Timsort, not quicksort"). The prompt asks for CHECK on outside-world facts, so the presenter sees the evidence.
+- **Verdict:** asked with its own instructions (`brain(config, "verdict")`, `SAY: Verdict: …`). With the Q&A instructions it answered SILENT.
+- **Voice responses can fail upstream** (`response.done status=failed`, "an upstream service call did not complete"). This happened about once per sim. Our requests are retried once.
+- ⚠️ **Two sessions on one key slow each other down.** A voice `response.create` sent within ~1 s of a brain `response.done` takes ~1.6–1.8 s to its first audio; 0.8 s later it takes ~0.36 s (`probes/two_session_latency.py`, 5 rounds).
+  - The cause is not the voice's own commit (`probes/voice_latency.py`) and not the brain's commit.
+  - Cancelling the brain's response doesn't help.
+  - `say()` therefore waits until 0.8 s after the brain's last response (`BRAIN_SETTLE_S`), which is faster overall.
+  - A brain on a separate API key might avoid it (untested).
 
 ## UI events
 Publish `viva.ui` messages exactly as specified in `PLAN.md` → "Interfaces between A and B", via `room.local_participant.send_text(json, topic="viva.ui")`. Listen for `viva.ctl` with a text stream handler (pattern in `docs/vendor/higgs-realtime-tutorial/livekit/probe.py`).

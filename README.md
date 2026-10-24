@@ -14,7 +14,8 @@ Every AI is built to be your assistant. Practising a thesis defense, a capstone 
 | | |
 |---|---|
 | **Knows your slides** | Before the session, Claude Haiku reads every slide (image + text) and lists its claims, weak points and likely questions. During the session, the examiner always knows which slide you're on. |
-| **Interrupts at the next breath** | A director model reads your live transcript. When you make a weak claim ("our model is 40% better"), the examiner cuts in at your next pause: *"Better than what? What's the baseline?"* |
+| **Interrupts at the next breath** | A second Higgs Realtime session listens to you as the examiner's judgment. When you make a weak claim ("our model is 40% better") or contradict yourself, the examiner cuts in at your next pause: *"Better than what? What's the baseline?"* It pushes back on a weak answer and insists when you dodge. |
+| **Won't be talked over** | Talk over her and she stops, then decides: *"Let me finish."*, or she answers what you said. |
 | **Holds the floor** | When the examiner speaks, it keeps the floor briefly instead of yielding to the first sound you make. |
 | **Keeps time, and checks you listened** | It gives a reminder at T−2 min and at time-up. If you talk straight through a reminder, it escalates once: *"Let me stop you there."* The reminder also appears on screen. |
 | **Fact-checks on the web** | Checkable claims about the outside world ("LightGBM, released by Google in 2020") are verified with Higgs's server-side web search and corrected out loud. |
@@ -23,7 +24,8 @@ Every AI is built to be your assistant. Practising a thesis defense, a capstone 
 | **Custom examiner** | Three preset characters (The Skeptic, The Supervisor, The Industry Panelist), each with its own avatar, interruption rate and strictness, plus a free-text brief of your own. The character, not hard-coded rules, decides how often she interrupts and for what. |
 
 ## How it uses Higgs
-- **Manual turn control** (`turn_detection: null`). Presenter audio streams continuously. Our own VAD commits a chunk at each breath, which gives a transcript **without** an automatic reply. We decide when the examiner speaks (`response.create` with per-response instructions carrying the director's cue). That is what makes interruptions, holding the floor and our own barge-in policy possible.
+- **Higgs as the examiner's brain.** A second, text-only Realtime session (`output_modalities: ["text"]`) hears the same audio and, at each pause, answers one line: `SILENT`, `SAY: <words>` or `CHECK: <claim>`. It hears your voice directly, so there's no wait for a transcript. On a talk with 6 planted errors it caught 6/6 at a median of ~0.5 s per decision. Claude Haiku reading transcripts caught 5–6/6 at 1.5–1.9 s (`agent/probes/higgs_brain.py`).
+- **Manual turn control** (`turn_detection: null`) on both sessions. Presenter audio streams continuously. Our own VAD commits a chunk at each breath, which gives a transcript **without** an automatic reply. We decide when the examiner speaks: the voice session says the brain's line word for word (`response.create` with per-response instructions). That is what makes interruptions, holding the floor and our own barge-in policy possible.
 - **Clean cancellation:** `response.cancel` → avatar `clear_buffer()` → `conversation.item.truncate`, so the transcript matches what was actually heard (the server confirms the cancel in about 31 ms).
 - **Server-executed `web_search`** for live fact-checks.
 - **Code-switching** in Q&A, and `higgs-stt-3.1` for presenter captions.
@@ -43,8 +45,9 @@ flowchart LR
     SC["/scorecard"]
   end
   subgraph Agent["agent/ (Python worker)"]
-    VAD[Silero VAD] --> RT[Higgs Realtime WS]
-    Dir[Director<br/>Claude Haiku] --> RT
+    VAD[Silero VAD] --> Brain[Higgs Realtime: brain<br/>text only, decides]
+    VAD --> RT[Higgs Realtime: voice<br/>speaks, searches, captions]
+    Brain -->|"SAY / CHECK"| RT
     RT --> Out[Avatar / voice output]
   end
   Setup -->|"PDF + choices"| API
@@ -57,7 +60,7 @@ flowchart LR
 
 - **`web/`**: Vite + React + TypeScript. The Session page talks to the agent over LiveKit text streams: `viva.ctl` (start, slide changes, phases) and `viva.ui` (examiner state, captions, reminders, fact-checks, latency).
 - **`server/`**: FastAPI. Mints LiveKit tokens, renders uploaded PDFs with PyMuPDF, runs the per-slide Haiku analysis in parallel (structured outputs), serves the session config to the agent, stores the session log and generates the scorecard.
-- **`agent/`**: a hand-built worker. It joins the room, starts the avatar and drives a raw Higgs Realtime WebSocket. It owns turn-taking: VAD commits, the director, holding the floor, the timer, phases, fact-checks and the session log.
+- **`agent/`**: a hand-built worker. It joins the room, starts the avatar and drives a raw Higgs Realtime WebSocket. It owns turn-taking around the brain: VAD commits, when the brain is asked, holding the floor, being talked over, the timer, phases, fact-checks and the session log.
 - The A↔B interface (identities, message shapes, API) is pinned in [`PLAN.md`](PLAN.md) → "Interfaces between A and B".
 
 ## Setup
@@ -108,13 +111,14 @@ After an exam, the agent stays in the room and waits for the next **Start**. Pre
 ## Testing
 - **Prep (kill test K6):** `cd server && uv run python prep.py data/demo` analyses the 8-slide deck in about 3–8 s and catches every planted weakness.
 - **Scorecard:** `cd server && uv run python scorecard.py ../demo/sample-log.jsonl ../demo/session-config.json`. Every quote is checked against the log: its time and slide come from the log line, and anything that isn't verbatim is dropped.
-- **Agent, headless:** `cd agent && uv run probes/exam_sim.py` runs a full shortened exam on the demo deck (real Higgs and Haiku, simulated playback). The kill-test probes for manual turns, cancellation and Q&A mode are in `agent/probes/`.
+- **Agent, headless:** `cd agent && uv run probes/exam_sim.py [demo|gradebook]` runs a full shortened exam (real Higgs brain and voice, simulated playback), including an ignored reminder, code-switched answers and a barge-in. The kill-test probes for manual turns, cancellation and Q&A mode are in `agent/probes/`.
 - **Full stack, headless:** web + server + agent were run together with a synthesized presenter as the browser's fake microphone. Start, greeting, captions, slide changes, an interjection (2.4 s after the pause), Q&A, verdict, log upload and scorecard all worked (`server/CLAUDE.md` → "First live integration").
 - Design notes and measured results for each part: `agent/CLAUDE.md`, `server/CLAUDE.md`, `web/CLAUDE.md`.
 
 ## Known limitations
-- **Interruptions land at pauses, not mid-sentence.** The examiner cuts in at your next breath, typically **2–3.5 s** after the claim: VAD pause (0.6 s) + transcript (~0.4–1 s) + director (Claude Haiku, ~0.9–3.4 s, median ~2 s) + first audio (~0.45 s), plus avatar rendering.
-- **Limited interruptions, by design.** To avoid nagging, the examiner never interrupts in the first 20 s, at most once per slide, and waits 20–45 s between interjections, depending on the character. Only the strictest character (The Skeptic) interrupts for minor issues; the others save them for Q&A. Even so, it can use an interruption on one weakness and have to let a bigger one a few seconds later pass: in an early test it questioned an unsourced statistic and then stayed quiet on "40% better".
+- **Interruptions land at pauses, not mid-sentence.** The examiner cuts in at your next breath: VAD pause (0.6 s) + brain decision (~0.45–0.6 s) + first audio (~0.45 s), plus the avatar rendering. Measured in the headless sim: ~2.1–2.9 s from the pause to her first audio.
+- **Spacing, by design.** After she has spoken she waits 5–15 s (by character) before cutting in on something new, unless you are replying to her. Within that window a new weak claim waits. The brain still remembers it and can come back to it.
+- **The brain is a judgment call.** It is more willing to interrupt than a rules engine. In tests its "unscripted" interruptions were mostly fair (a contradiction with something said a minute earlier, an unlabelled chart). Occasionally it misattributes a point she raised to the presenter.
 - **The preview model's own turn-taking can't be switched on mid-session** (`turn_detection` is fixed at session start). Q&A therefore also runs on our manual turns: end-of-turn and barge-in come from our VAD and policy, not Higgs's built-in VAD.
 - **Speech-to-text:** short Indonesian phrases transcribe unreliably, so treat captions and scorecard quotes in Indonesian as approximate. STT occasionally invents a sentence from silence, and it can split a sentence at a breath (e.g. losing "percent better").
 - **Web-search follow-ups are sometimes unreliable** in wording or length. If the follow-up hasn't arrived after 12 s, the examiner gives the correction from memory instead.
