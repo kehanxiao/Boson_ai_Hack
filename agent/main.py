@@ -107,8 +107,8 @@ def create_avatar(room: str, avatar_id: str) -> dict:
             log.warning("avatar: HTTP 429 %s; retrying in %ss", r.json().get("error", {}).get("code"), wait)
             time.sleep(min(wait, 20))
             continue
-        raise SystemExit(f"avatar session failed: HTTP {r.status_code} {r.text[:300]}  (try VIVA_AVATAR=0)")
-    raise SystemExit("avatar session failed after retries (try VIVA_AVATAR=0)")
+        raise RuntimeError(f"avatar session failed: HTTP {r.status_code} {r.text[:300]}")
+    raise RuntimeError("avatar session failed after retries")
 
 
 def release_avatar(session_id: str) -> None:
@@ -174,7 +174,15 @@ async def run(session_id: str) -> None:
     room_name = config.get("session_id", session_id)
 
     use_avatar = USE_AVATAR and config.get("avatar", True)  # the Setup page's choice; VIVA_AVATAR=0 overrides it
-    avatar = create_avatar(room_name, config["character"].get("avatar_id", "builtin_claire_v1")) if use_avatar else None
+    avatar = None
+    if use_avatar:
+        try:
+            avatar = create_avatar(room_name, config["character"].get("avatar_id", "builtin_claire_v1"))
+        except RuntimeError as exc:
+            # Boson's avatar slots are shared by every team; when none is free the exam still runs, voice only. Exiting
+            # here left the page with no examiner at all (live, Sat 12:38: "Every realtime avatar slot is in use").
+            log.error("%s: continuing voice-only", exc)
+            use_avatar = False
     if avatar:
         log.info("avatar session %s %s", avatar["id"], avatar["status"])
 
@@ -211,6 +219,7 @@ async def run(session_id: str) -> None:
             return ExamController(config, realtime, output, LiveKitUI(room), slog, brain, factcheck=FACTCHECK)
 
         current = new_exam()
+        idle = asyncio.Event()  # set when an agent started by the server should leave
         await realtime.connect(realtime_session(config))
         await brain.connect(brain_session(config))
 
@@ -244,7 +253,13 @@ async def run(session_id: str) -> None:
         @room.on("participant_disconnected")
         def on_left(participant):
             if participant.identity not in (AVATAR_IDENTITY, AGENT_IDENTITY):
-                asyncio.create_task(reset(f"{participant.identity} left the room"))
+                if IDLE_EXIT_S:
+                    # Started by the server: closing the tab ends it at once, releasing the avatar slot for the next
+                    # session (a lingering agent held the only free slot). The next page load starts a fresh agent.
+                    log.info("%s left the room: leaving", participant.identity)
+                    idle.set()
+                else:
+                    asyncio.create_task(reset(f"{participant.identity} left the room"))
 
         for participant in room.remote_participants.values():
             for publication in participant.track_publications.values():
@@ -267,14 +282,18 @@ async def run(session_id: str) -> None:
         room.register_text_stream_handler("viva.ctl", lambda reader, identity: asyncio.ensure_future(read_ctl(reader, identity)))
         log.info("ready: waiting for the presenter's {type: start}")
 
-        idle = asyncio.Event()
-
         async def exit_when_idle() -> None:
-            """Started by the server (server/agent_launcher.py): leave once no presenter has been in the room for
-            IDLE_EXIT_S, so the avatar slot is freed. The next visit starts a fresh agent."""
+            """Started by the server (server/agent_launcher.py): leave if no presenter comes within IDLE_EXIT_S (the page
+            was opened but Start never pressed), so the avatar slot is freed. A presenter leaving ends it at once."""
             last_seen = time.monotonic()
             while True:
                 await asyncio.sleep(5)
+                if not room.isconnected():
+                    # Dropped by LiveKit, e.g. a second agent joined as the same identity: its room state is frozen,
+                    # so it would never see the presenter leave and would hold its avatar slot.
+                    log.warning("disconnected from the room: leaving")
+                    idle.set()
+                    return
                 if any(p.identity not in (AVATAR_IDENTITY, AGENT_IDENTITY) for p in room.remote_participants.values()):
                     last_seen = time.monotonic()
                 elif time.monotonic() - last_seen > IDLE_EXIT_S:

@@ -10,7 +10,7 @@
 >   - She nudges after 4 s of silence.
 >   - The early time reminder comes at T−2, or T−1 for a talk under 5 minutes.
 > - **The interface is voice only:** the Session page shows no transcript (Sat 10:40). The agent still sends `caption` messages, and the log keeps every line for the scorecard.
-> - **The server starts the agent** (`server/agent_launcher.py`, Sat 12:15): one per session room, when the Session page opens, and it leaves 5 minutes after the presenter. It is no longer started by hand.
+> - **The server starts the agent** (`server/agent_launcher.py`, Sat 12:15): one per session room, when the Session page opens, and it leaves as soon as the presenter does (or after 5 minutes if none joins). With no avatar slot free it runs voice only. It is no longer started by hand.
 > - **The voice gives the verdict** when Q&A is on. A session with `qa_s: 0` has no Q&A and no verdict.
 > - **Never built:** `floor.py`, `timer.py`, `phases.py` and `prompts/characters/` (that logic lives in `agent/exam.py` and the character's `persona`), and `docs/architecture.png` (the diagram is in the README).
 > - **Checkpoints:**

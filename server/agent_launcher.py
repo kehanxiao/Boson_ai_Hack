@@ -1,14 +1,15 @@
 """Start the examiner agent for a session automatically.
 
 When the Session page asks for a presenter token and the session's LiveKit room has no agent (and none started here
-is still starting), the server runs `uv run main.py <room>` in agent/. That agent leaves by itself once no presenter
-has been in the room for VIVA_AGENT_IDLE_EXIT_S (default 300 s), which frees its avatar slot; the next visit starts a
-fresh one. Before this, every new upload (and every agent that had been stopped) left the page waiting for an agent
+is still starting), the server runs `uv run main.py <room>` in agent/. That agent leaves as soon as the presenter does
+(or after VIVA_AGENT_IDLE_EXIT_S, default 300 s, if none ever joins), which frees its avatar slot at once; the next
+visit starts a fresh one. Before this, every new upload (and every agent that had been stopped) left the page waiting for an agent
 that nobody had started.
 
 VIVA_AUTOSTART_AGENT=0 turns this off, e.g. to run the agent by hand or on another machine.
 """
 
+import asyncio
 import logging
 import os
 import shutil
@@ -27,6 +28,10 @@ AGENT_DIR = Path(__file__).resolve().parents[1] / "agent"
 AGENT_IDENTITY = "viva-agent"  # contract: PLAN.md "Interfaces between A and B"
 
 _started: dict[str, subprocess.Popen] = {}  # room -> the agent process started for it
+# One request at a time: the Session page asks twice on load (React runs its effect twice in development), and two
+# requests that both checked before either started an agent started two. They joined as the same identity, LiveKit
+# dropped one mid-sentence, and each held an avatar slot until Boson ran out of them (live, Sat 12:35).
+_lock = asyncio.Lock()
 
 
 def enabled() -> bool:
@@ -46,6 +51,11 @@ async def agent_in_room(room: str) -> bool:
 
 
 async def ensure_agent(room: str) -> None:
+    async with _lock:
+        await _ensure(room)
+
+
+async def _ensure(room: str) -> None:
     proc = _started.get(room)
     if not enabled() or (proc and proc.poll() is None) or await agent_in_room(room):
         return
