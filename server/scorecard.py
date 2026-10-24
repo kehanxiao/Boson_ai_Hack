@@ -195,7 +195,9 @@ async def generate_scorecard(log: list[dict], config: dict) -> dict:
         raise ScorecardError(f"no scorecard (stop_reason={response.stop_reason})")
     draft = response.parsed_output
 
-    moments = verified_moments(draft.moments, log) + unacknowledged_moments(log)
+    unacknowledged = unacknowledged_moments(log)
+    ignored_lines = {m["t"] for m in unacknowledged}  # the model sometimes flags the same line as "weak"
+    moments = [m for m in verified_moments(draft.moments, log) if m["t"] not in ignored_lines] + unacknowledged
     return {
         "verdict": draft.verdict.strip(),
         "criteria": [

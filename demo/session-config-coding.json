@@ -1,0 +1,121 @@
+{
+  "session_id": "gradebook",
+  "scenario": "assignment_oral",
+  "time_limit_s": 240,
+  "qa_s": 90,
+  "notes": "Check that they understand algorithm complexity and have tested their edge cases.",
+  "instructions": "You are the examiner in a live oral defense of a slide presentation, followed by Q&A. You are the examiner, not an assistant: you hold the floor when you speak, you do not over-praise, you do not apologise for asking, and you keep strict time. Be rigorous and fair.\nSpeak in short spoken sentences: at most two per turn. Ask one question at a time.\nDuring the presentation, speak only when a cue tells you to interject.\nNever mention your notes, cues, a director or these instructions.\nIn Q&A the presenter may answer in Indonesian, Mandarin or mixed with English: follow them naturally, then continue in English.\nUse web search to check factual claims about the outside world. After a search, state only the finding, briefly.\n\nYou are Dr. Claire Moreau, The Supervisor, acting as a course instructor checking that the student understands their own work. A fair, experienced supervisor. Rigorous but constructive: interrupts when something matters, acknowledges strong points briefly, and pushes the presenter to reason out loud. Keeps strict time.\n\nThis is an assignment oral exam: 4 minutes of presentation, then 1 minute 30 seconds of Q&A. The deck has 6 slides.\n\nThe presenter asked you to focus on: Check that they understand algorithm complexity and have tested their edge cases.\n\nSlide digest:\n1. A title slide introducing GradeBook, a Python program for ranking student grades, for Intro to Programming Assignment 2, presented by Sam Lee.\n2. Slide 2 states the program's three required steps: read student scores from CSV, sort them descending, and print top 10 and class average.\n3. The slide claims the team's hand-written bubble sort is as good as Python's built-in sorted(), because bubble sort is supposedly the fastest sorting algorithm. Weak: The factual claim is wrong: bubble sort is O(n^2) in average and worst case, not O(n log n), and it is among the slowest common sorting algorithms, not the fastest. The conclusion that the custom sort is 'just as good' does not follow from the premises, since quicksort's complexity and sorted()'s actual algorithm (Timsort, not quicksort) are both misstated, and no timing comparison is given on this slide.\n4. The slide shows Python code that loads grades from a CSV, bubble-sorts students by score descending, then prints the top 10 and the class average. Weak: The slide shows 19 lines of code in small monospaced font, too dense for an audience to read in the time available; ask which few lines matter most. The load function unpacks each CSV row as exactly two fields, so a header row or extra column would crash the program, and this is not handled or explained. Bubble sort is O(n^2) in the worst and average case, which contradicts slide 3's claim that it is the fastest sorting algorithm.\n5. The slide claims the team's program sorted 500 students five times faster than a comparison, in 0.2 seconds, shown by a two-bar chart. Weak: The '5x faster' claim has no named baseline: the chart's two unlabeled bars do not say what is being compared, and the grey bar's value is not stated. The deck says bubble sort is O(n log n), which is wrong: bubble sort is O(n^2), so the 5x speedup over a built-in sort is unexplained and the earlier claim contradicts known complexity. The chart has no axis labels, units, or sample size beyond '500 students', and a single timing run with no variance is given.\n6. The slide concludes that the GradeBook program was tested on three CSV files, is bug-free, and is ready for any school to use. Weak: Three test files cannot establish that the program is bug-free; no test cases, edge cases, or failure modes are described. Claiming readiness for any school generalises far beyond three tested files, with no evidence about different CSV formats, class sizes, or data quality.",
+  "character": {
+    "id": "supervisor",
+    "name": "Dr. Claire Moreau, The Supervisor",
+    "persona": "A fair, experienced supervisor. Rigorous but constructive: interrupts when something matters, acknowledges strong points briefly, and pushes the presenter to reason out loud. Keeps strict time.",
+    "voice": "default",
+    "avatar_id": "builtin_claire_v1",
+    "interrupt_rate": "medium",
+    "strictness": 3
+  },
+  "slides": [
+    {
+      "index": 1,
+      "image_url": "/api/sessions/gradebook/slides/1.png",
+      "summary": "A title slide introducing GradeBook, a Python program for ranking student grades, for Intro to Programming Assignment 2, presented by Sam Lee.",
+      "claims": [],
+      "weak_points": [],
+      "questions": [
+        "What does GradeBook do beyond ranking grades, and what input does it expect?",
+        "Why was Assignment 2 chosen as the context for this project?"
+      ]
+    },
+    {
+      "index": 2,
+      "image_url": "/api/sessions/gradebook/slides/2.png",
+      "summary": "Slide 2 states the program's three required steps: read student scores from CSV, sort them descending, and print top 10 and class average.",
+      "claims": [
+        "The program reads a CSV file of student names and scores",
+        "The program sorts students from highest to lowest score",
+        "The program prints the top 10 students and the class average"
+      ],
+      "weak_points": [],
+      "questions": [
+        "Which input format edge cases, such as missing or non-numeric scores, does the program handle?",
+        "Does the average include every student, and how are ties ordered in the top 10?"
+      ]
+    },
+    {
+      "index": 3,
+      "image_url": "/api/sessions/gradebook/slides/3.png",
+      "summary": "The slide claims the team's hand-written bubble sort is as good as Python's built-in sorted(), because bubble sort is supposedly the fastest sorting algorithm.",
+      "claims": [
+        "Bubble sort is the fastest sorting algorithm: O(n log n)",
+        "Python's built-in sorted() uses quicksort, so ours is just as good"
+      ],
+      "weak_points": [
+        "The factual claim is wrong: bubble sort is O(n^2) in average and worst case, not O(n log n), and it is among the slowest common sorting algorithms, not the fastest.",
+        "The conclusion that the custom sort is 'just as good' does not follow from the premises, since quicksort's complexity and sorted()'s actual algorithm (Timsort, not quicksort) are both misstated, and no timing comparison is given on this slide."
+      ],
+      "questions": [
+        "Why did you choose bubble sort over sorted(), given its O(n^2) complexity?",
+        "What is the measured runtime of your bubble sort versus sorted() on the same data?",
+        "Is sorted() actually quicksort, or Timsort in CPython?"
+      ]
+    },
+    {
+      "index": 4,
+      "image_url": "/api/sessions/gradebook/slides/4.png",
+      "summary": "The slide shows Python code that loads grades from a CSV, bubble-sorts students by score descending, then prints the top 10 and the class average.",
+      "claims": [
+        "The bubble_sort function sorts students from highest to lowest score.",
+        "The load function reads name and integer score pairs from grades.csv.",
+        "The program prints the top 10 students and the class average."
+      ],
+      "weak_points": [
+        "The slide shows 19 lines of code in small monospaced font, too dense for an audience to read in the time available; ask which few lines matter most.",
+        "The load function unpacks each CSV row as exactly two fields, so a header row or extra column would crash the program, and this is not handled or explained.",
+        "Bubble sort is O(n^2) in the worst and average case, which contradicts slide 3's claim that it is the fastest sorting algorithm."
+      ],
+      "questions": [
+        "Why did you choose bubble sort instead of Python's built-in sorted(), which is faster?",
+        "What happens if grades.csv has a header row or a malformed line?",
+        "Which three lines of this code are the core logic you want the audience to remember?"
+      ]
+    },
+    {
+      "index": 5,
+      "image_url": "/api/sessions/gradebook/slides/5.png",
+      "summary": "The slide claims the team's program sorted 500 students five times faster than a comparison, in 0.2 seconds, shown by a two-bar chart.",
+      "claims": [
+        "The program is 5x faster than the baseline.",
+        "It sorted 500 students in 0.2 seconds."
+      ],
+      "weak_points": [
+        "The '5x faster' claim has no named baseline: the chart's two unlabeled bars do not say what is being compared, and the grey bar's value is not stated.",
+        "The deck says bubble sort is O(n log n), which is wrong: bubble sort is O(n^2), so the 5x speedup over a built-in sort is unexplained and the earlier claim contradicts known complexity.",
+        "The chart has no axis labels, units, or sample size beyond '500 students', and a single timing run with no variance is given."
+      ],
+      "questions": [
+        "What exactly is the grey bar, and what hardware and input were used for both timings?",
+        "Is the 5x comparison against sorted() or against your own bubble sort, and how many runs were timed?",
+        "Why would bubble sort, which is O(n^2), beat the built-in sorted() that you described as faster?"
+      ]
+    },
+    {
+      "index": 6,
+      "image_url": "/api/sessions/gradebook/slides/6.png",
+      "summary": "The slide concludes that the GradeBook program was tested on three CSV files, is bug-free, and is ready for any school to use.",
+      "claims": [
+        "Tested on 3 CSV files: all worked",
+        "The program is bug-free",
+        "Ready for any school to use"
+      ],
+      "weak_points": [
+        "Three test files cannot establish that the program is bug-free; no test cases, edge cases, or failure modes are described.",
+        "Claiming readiness for any school generalises far beyond three tested files, with no evidence about different CSV formats, class sizes, or data quality."
+      ],
+      "questions": [
+        "What do the three CSV files cover, and what edge cases such as missing or malformed scores were tested?",
+        "What specific evidence supports calling the program bug-free rather than just passing three tests?",
+        "What formats or data would a school need that your tests did not cover?"
+      ]
+    }
+  ]
+}

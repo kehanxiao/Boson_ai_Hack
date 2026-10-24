@@ -48,9 +48,17 @@ Stack: uv, Python 3.11+, `fastapi`, `uvicorn`, `python-multipart`, `livekit-api`
 - Timing facts (time used vs. limit, reminder/escalation/ack times) are computed from the log and given to the model; it doesn't do the arithmetic.
 - Answering in another language never counts against the presenter (rule in the prompt; it was penalised before the rule).
 - Presenter `chunk`s after the `debrief` phase are ignored (`exam_only`). In the first live run, the mic kept being transcribed during the verdict, including an STT hallucination from silence.
+- CLI: `uv run python scorecard.py ../demo/sample-log.jsonl ../demo/session-config.json`.
 
 ## First live integration (Fri 23:55): web + server + A's agent (voice-only), headless
 - Ran a full session in a fresh room: fake browser mic = TTS presenter track, Start → slides 2, 3 → Q&A → End. **Everything connected:** start handshake, greeting, presenter captions, slide changes, interjection, Q&A question, verdict, `ended`, log upload (27 lines), and a scorecard from the real log (14 s, all quotes verbatim). No browser console errors.
 - `pause_to_interjection` arrived in the HUD: **2.4 s**.
 - Fixed on the web side: voice-only audio comes from `viva-agent` (it was only played from `boson-avatar`), and "start" is re-sent every 2 s until the first `viva.ui` (the agent joins the room before it listens to `viva.ctl`).
-- CLI: `uv run python scorecard.py ../demo/sample-log.jsonl ../demo/session-config.json`.
+
+## Built-in sessions (`fixed_sessions.py`, Sat 00:20)
+- `demo` (ERwait, the contract examples) and `gradebook` (GradeBook, the demo-video deck, agreed with A) are served from `demo/` files: config, slides rendered from the deck PDF into `data/<id>/` at startup, and a log upload.
+- Scorecard: `demo` always returns `sample-scorecard.json`. `gradebook` generates from the uploaded log like any other session (no sample to fall back on).
+- `demo/session-config-coding.json` comes from `scripts/make_gradebook_session.py` (Supervisor, Assignment oral, 240 + 90 s); re-run it after regenerating `prepped-analysis-coding.json`. A's agent falls back to the same file when the server is down; so does the web app.
+- The scorecard drops a model "weak" moment on the same line as a code-detected "unacknowledged" one (it duplicated it in testing).
+- ⚠️ **`uvicorn --reload` is unreliable on Windows here.** Twice it missed a change to `sessions.py`, and stopping it once left an orphaned worker still answering on port 8000 with old code. If behaviour doesn't match the code: stop every `uvicorn`/`multiprocessing.spawn` python process, then start without `--reload`.
+- Deck scripts now fail loudly when text doesn't fit its box (`textbox()` in `make_placeholder_deck.py`). PyMuPDF silently dropped the GradeBook title before; deck, analysis and `gradebook` config were regenerated (all planted weaknesses still caught).

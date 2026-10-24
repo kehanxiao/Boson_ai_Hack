@@ -1,6 +1,6 @@
 """Session config, slide images, log upload and scorecard.
 
-session_id "demo" always works from the demo/ sample files.
+Built-in sessions "demo" and "gradebook" always work from demo/ files (fixed_sessions.py).
 Creating a session (upload + prep) lives in session_create.py.
 """
 
@@ -12,7 +12,8 @@ import anthropic
 from fastapi import APIRouter, HTTPException, Path as PathParam, Request
 from fastapi.responses import FileResponse
 
-from config import DATA_DIR, DEMO_DIR
+from config import DATA_DIR
+from fixed_sessions import fixed_file
 from scorecard import ScorecardError, generate_scorecard, read_log
 
 router = APIRouter(prefix="/api/sessions")
@@ -26,11 +27,14 @@ def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def session_config(session_id: str) -> dict:
+    """Built-in sessions (demo, gradebook) come from demo/; uploaded ones from data/<id>/."""
+    return read_json(fixed_file(session_id, "config") or DATA_DIR / session_id / "config.json")
+
+
 @router.get("/{session_id}")
 def get_session(session_id: str = SessionId) -> dict:
-    if session_id == "demo":
-        return read_json(DEMO_DIR / "session-config.json")
-    return read_json(DATA_DIR / session_id / "config.json")
+    return session_config(session_id)
 
 
 @router.get("/{session_id}/slides/{n}.png")
@@ -71,14 +75,15 @@ _scorecard_locks: dict[str, asyncio.Lock] = {}
 @router.get("/{session_id}/scorecard")
 async def get_scorecard(session_id: str = SessionId) -> dict:
     """Generated on first request from log.jsonl + config.json (~15-20 s), then cached to disk."""
-    if session_id == "demo":
-        return read_json(DEMO_DIR / "sample-scorecard.json")
+    sample = fixed_file(session_id, "scorecard")
+    if sample:  # "demo" always returns the contract sample
+        return read_json(sample)
     session_dir = DATA_DIR / session_id
     cached = session_dir / "scorecard.json"
     async with _scorecard_locks.setdefault(session_id, asyncio.Lock()):  # one generation per session
         if cached.exists():
             return read_json(cached)
-        config = read_json(session_dir / "config.json")
+        config = session_config(session_id)
         if not (session_dir / "log.jsonl").exists():
             raise HTTPException(404, "no session log yet: the agent uploads it when the session ends")
         log = read_log((session_dir / "log.jsonl").read_text(encoding="utf-8"))

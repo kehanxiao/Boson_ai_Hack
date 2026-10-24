@@ -8,20 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 import livekit_token
 import session_create
 import sessions
-from config import DATA_DIR, DEMO_DIR, WEB_ORIGINS
-from render import is_stale, render_deck
-
-
-def render_demo_deck() -> None:
-    """Keep data/demo/ in sync with demo/deck.pdf so session "demo" always has slides."""
-    pdf, out = DEMO_DIR / "deck.pdf", DATA_DIR / "demo"
-    if pdf.exists() and is_stale(pdf, out):
-        render_deck(pdf, out)
+from config import WEB_ORIGINS
+from fixed_sessions import render_fixed_decks
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    render_demo_deck()
+    render_fixed_decks()  # slides for the built-in "demo" and "gradebook" sessions
     yield
 
 

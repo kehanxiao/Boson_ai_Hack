@@ -85,7 +85,7 @@ cd agent && uv run main.py <session_id>    # one agent per session
 
 After an exam, the agent stays in the room and waits for the next **Start**. Pressing Start again, or leaving the page, resets it to a fresh exam with a new log.
 
-**The built-in demo session** needs no upload: `uv run main.py demo`, then open http://localhost:5173/session/demo.
+**Built-in sessions** need no upload: `uv run main.py gradebook` (the demo-video deck), then open http://localhost:5173/session/gradebook. Or use `demo` for the ERwait deck.
 **Voice-only** (no avatar slot used): `VIVA_AVATAR=0 uv run main.py <session_id>`.
 **Use a wired headset**: speakers feed the examiner's voice back into the mic.
 
@@ -97,7 +97,8 @@ After an exam, the agent stays in the room and waits for the next **Start**. Pre
 | File | What it is |
 |---|---|
 | `deck.pdf` + `deck-outline.md` | "ERwait", an 8-slide internship project with **planted weaknesses**: "40% better" with no baseline, a target-leakage feature, a wrong fact about LightGBM, a crammed slide and a deployment overclaim |
-| `deck-coding.pdf` + `deck-coding-outline.md` | "GradeBook", an easy 6-slide intro-programming assignment (bubble sort called O(n log n), "`sorted()` uses quicksort", "5x faster" with no baseline) that anyone can follow |
+| `deck-coding.pdf` + `deck-coding-outline.md` | "GradeBook", the **demo-video deck**: an easy 6-slide intro-programming assignment (bubble sort called O(n log n), "`sorted()` uses quicksort", "5x faster" with no baseline) that anyone can follow. The outline includes a timed presenter run-sheet |
+| `session-config-coding.json` | The built-in `gradebook` session (Assignment oral, The Supervisor, 4:00 + 1:30) |
 | `prepped-analysis.json`, `prepped-analysis-coding.json` | The per-slide analysis Haiku produced for each deck |
 | `session-config.json` | A full SessionConfig, as the agent receives it |
 | `sample-log.jsonl` | A session log in the contract format |

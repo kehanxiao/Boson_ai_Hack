@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pymupdf
 
-from make_placeholder_deck import ACCENT, H, INK, MUTED, W, bullets, title
+from make_placeholder_deck import ACCENT, H, INK, MUTED, W, bullets, textbox, title
 
 OUT = Path(__file__).resolve().parents[2] / "demo" / "deck-coding.pdf"
 CODE_BG = (0.11, 0.13, 0.17)
@@ -61,13 +61,13 @@ SLIDES = [
 def code_slide(page: pymupdf.Page) -> None:
     box = pymupdf.Rect(48, 92, W - 48, H - 30)
     page.draw_rect(box, color=None, fill=CODE_BG, radius=0.03)
-    page.insert_textbox(box + (14, 10, -14, -8), CODE, fontsize=9.2, fontname="cour", color=CODE_INK, lineheight=1.18)
+    textbox(page, box + (14, 10, -14, -8), CODE, fontsize=9.2, fontname="cour", color=CODE_INK, lineheight=1.18)
 
 
 def results_slide(page: pymupdf.Page) -> None:
     # Planted: "5x faster" with no baseline or input size, and a chart with no labels.
-    page.insert_textbox(pymupdf.Rect(48, 110, 380, 250), "5x faster!", fontsize=44, fontname="hebo", color=ACCENT)
-    page.insert_textbox(pymupdf.Rect(48, 190, 380, 260), "Sorted 500 students in 0.2 seconds", fontsize=16, color=MUTED)
+    textbox(page, pymupdf.Rect(48, 110, 380, 250), "5x faster!", fontsize=44, fontname="hebo", color=ACCENT)
+    textbox(page, pymupdf.Rect(48, 190, 380, 260), "Sorted 500 students in 0.2 seconds", fontsize=16, color=MUTED)
     base = H - 70
     for i, height in enumerate([180, 36]):
         x = 440 + i * 110
@@ -80,8 +80,8 @@ def main() -> None:
     for n, (heading, lines) in enumerate(SLIDES, start=1):
         page = doc.new_page(width=W, height=H)
         if n == 1:
-            page.insert_textbox(pymupdf.Rect(48, 130, W - 48, 210), heading, fontsize=32, fontname="hebo", color=INK)
-            page.insert_textbox(pymupdf.Rect(48, 230, W - 48, 300), "\n".join(lines), fontsize=16, color=MUTED, lineheight=1.4)
+            textbox(page, pymupdf.Rect(48, 100, W - 48, 220), heading, fontsize=32, fontname="hebo", color=INK)
+            textbox(page, pymupdf.Rect(48, 230, W - 48, 300), "\n".join(lines), fontsize=16, color=MUTED, lineheight=1.4)
             continue
         title(page, heading, n)
         if heading == "The Code":

@@ -1,104 +1,104 @@
 [
   {
     "index": 1,
-    "image_url": "/api/sessions/coding-demo/slides/1.png",
-    "summary": "Title slide introducing an introductory programming assignment presented by Sam Lee.",
+    "image_url": "/api/sessions/gradebook/slides/1.png",
+    "summary": "A title slide introducing GradeBook, a Python program for ranking student grades, for Intro to Programming Assignment 2, presented by Sam Lee.",
     "claims": [],
     "weak_points": [],
     "questions": [
-      "What is the assignment about, and what will you cover in the next few slides?"
+      "What does GradeBook do beyond ranking grades, and what input does it expect?",
+      "Why was Assignment 2 chosen as the context for this project?"
     ]
   },
   {
     "index": 2,
-    "image_url": "/api/sessions/coding-demo/slides/2.png",
-    "summary": "The slide states the assignment's task: read student names and scores from a CSV, sort them highest to lowest, and print the top 10 and class average.",
+    "image_url": "/api/sessions/gradebook/slides/2.png",
+    "summary": "Slide 2 states the program's three required steps: read student scores from CSV, sort them descending, and print top 10 and class average.",
     "claims": [
-      "The program must read a CSV file of student names and scores.",
-      "Students must be sorted from highest to lowest score.",
-      "The program must print the top 10 students and the class average."
+      "The program reads a CSV file of student names and scores",
+      "The program sorts students from highest to lowest score",
+      "The program prints the top 10 students and the class average"
     ],
     "weak_points": [],
     "questions": [
-      "Which sorting method did you choose, and why was it suitable for this task?",
-      "How does your program handle malformed rows in the CSV file?"
+      "Which input format edge cases, such as missing or non-numeric scores, does the program handle?",
+      "Does the average include every student, and how are ties ordered in the top 10?"
     ]
   },
   {
     "index": 3,
-    "image_url": "/api/sessions/coding-demo/slides/3.png",
-    "summary": "The slide claims the team wrote its own bubble sort and that it is as good as Python's built-in quicksort-based sorted().",
+    "image_url": "/api/sessions/gradebook/slides/3.png",
+    "summary": "The slide claims the team's hand-written bubble sort is as good as Python's built-in sorted(), because bubble sort is supposedly the fastest sorting algorithm.",
     "claims": [
-      "Bubble sort is the fastest sorting algorithm with O(n log n) complexity",
-      "Python's built-in sorted() uses quicksort",
-      "The team's own bubble sort is just as good as sorted()"
+      "Bubble sort is the fastest sorting algorithm: O(n log n)",
+      "Python's built-in sorted() uses quicksort, so ours is just as good"
     ],
     "weak_points": [
-      "Bubble sort is O(n^2) in the average and worst case, not O(n log n), and it is not the fastest general-purpose sorting algorithm; O(n log n) describes merge sort, quicksort and heapsort.",
-      "Python's sorted() uses Timsort, a hybrid merge sort, not quicksort, so the stated reason is factually wrong.",
-      "'Just as good' is asserted with no benchmark, dataset size, or timing comparison, and it conflicts with the complexity argument made on the same slide."
+      "The factual claim is wrong: bubble sort is O(n^2) in average and worst case, not O(n log n), and it is among the slowest common sorting algorithms, not the fastest.",
+      "The conclusion that the custom sort is 'just as good' does not follow from the premises, since quicksort's complexity and sorted()'s actual algorithm (Timsort, not quicksort) are both misstated, and no timing comparison is given on this slide."
     ],
     "questions": [
-      "Why do you say bubble sort is O(n log n) when its average case is O(n squared)?",
-      "What does sorted() actually use in CPython, and how did you measure that your sort is just as good?",
-      "Did you time your bubble sort against sorted() on the same data?"
+      "Why did you choose bubble sort over sorted(), given its O(n^2) complexity?",
+      "What is the measured runtime of your bubble sort versus sorted() on the same data?",
+      "Is sorted() actually quicksort, or Timsort in CPython?"
     ]
   },
   {
     "index": 4,
-    "image_url": "/api/sessions/coding-demo/slides/4.png",
-    "summary": "Shows Python code that loads student name-score rows from a CSV, bubble-sorts them by score descending, then prints the top 10 and the class average.",
+    "image_url": "/api/sessions/gradebook/slides/4.png",
+    "summary": "The slide shows Python code that loads grades from a CSV, bubble-sorts students by score descending, then prints the top 10 and the class average.",
     "claims": [
-      "The program loads student names and scores from grades.csv and sorts them from highest to lowest score using bubble sort.",
-      "The program prints the top 10 students and the class average score."
+      "The bubble_sort function sorts students from highest to lowest score.",
+      "The load function reads name and integer score pairs from grades.csv.",
+      "The program prints the top 10 students and the class average."
     ],
     "weak_points": [
-      "The slide is too dense to present, with about 19 lines of code in small monospace text; the audience cannot follow it in the time available, so ask which few lines matter most.",
-      "The load function assumes every CSV row has exactly two fields and that scores are integers, with no handling for a header row, blank lines or malformed values, and the code does not check these assumptions.",
-      "Bubble sort is O(n^2) in the worst and average case, which conflicts with the previous slide's claim that it is the fastest sorting algorithm with O(n log n) complexity."
+      "The slide shows 19 lines of code in small monospaced font, too dense for an audience to read in the time available; ask which few lines matter most.",
+      "The load function unpacks each CSV row as exactly two fields, so a header row or extra column would crash the program, and this is not handled or explained.",
+      "Bubble sort is O(n^2) in the worst and average case, which contradicts slide 3's claim that it is the fastest sorting algorithm."
     ],
     "questions": [
-      "Which three lines of this code are most important for the audience to understand?",
-      "What happens if grades.csv has a header row or a non-integer score?",
-      "Why use bubble sort instead of Python's built-in sorted(), given the slide 3 claim?",
-      "Does the average divide by zero if the file is empty?"
+      "Why did you choose bubble sort instead of Python's built-in sorted(), which is faster?",
+      "What happens if grades.csv has a header row or a malformed line?",
+      "Which three lines of this code are the core logic you want the audience to remember?"
     ]
   },
   {
     "index": 5,
-    "image_url": "/api/sessions/coding-demo/slides/5.png",
-    "summary": "The slide claims the team's sorting program is 5x faster, sorting 500 students in 0.2 seconds, shown with an unlabeled two-bar chart.",
+    "image_url": "/api/sessions/gradebook/slides/5.png",
+    "summary": "The slide claims the team's program sorted 500 students five times faster than a comparison, in 0.2 seconds, shown by a two-bar chart.",
     "claims": [
-      "The program is 5x faster than the comparison.",
-      "Sorting 500 students took 0.2 seconds."
+      "The program is 5x faster than the baseline.",
+      "It sorted 500 students in 0.2 seconds."
     ],
     "weak_points": [
-      "The 5x speedup has no stated baseline: the comparison method, its runtime, and the hardware are not given.",
-      "The bar chart has no axis labels, units, or legend, so the audience cannot tell what the bars measure.",
-      "The deck says bubble sort is O(n log n), which is false: bubble sort is O(n^2), and Python's sorted() uses Timsort rather than quicksort, so the 5x result conflicts with the stated approach."
+      "The '5x faster' claim has no named baseline: the chart's two unlabeled bars do not say what is being compared, and the grey bar's value is not stated.",
+      "The deck says bubble sort is O(n log n), which is wrong: bubble sort is O(n^2), so the 5x speedup over a built-in sort is unexplained and the earlier claim contradicts known complexity.",
+      "The chart has no axis labels, units, or sample size beyond '500 students', and a single timing run with no variance is given."
     ],
     "questions": [
-      "What exactly is the 5x compared against, and what were the baseline runtimes?",
-      "What do the two bars measure, and what are their units?",
-      "Is 0.2 seconds for 500 students representative, and how was it timed?"
+      "What exactly is the grey bar, and what hardware and input were used for both timings?",
+      "Is the 5x comparison against sorted() or against your own bubble sort, and how many runs were timed?",
+      "Why would bubble sort, which is O(n^2), beat the built-in sorted() that you described as faster?"
     ]
   },
   {
     "index": 6,
-    "image_url": "/api/sessions/coding-demo/slides/6.png",
-    "summary": "The slide concludes that the program was tested on three CSV files, is bug-free, and is ready for any school to use.",
+    "image_url": "/api/sessions/gradebook/slides/6.png",
+    "summary": "The slide concludes that the GradeBook program was tested on three CSV files, is bug-free, and is ready for any school to use.",
     "claims": [
       "Tested on 3 CSV files: all worked",
       "The program is bug-free",
       "Ready for any school to use"
     ],
     "weak_points": [
-      "Three test files cannot establish that the program is bug-free; no test coverage, edge cases, or failure inputs are reported.",
-      "The claim of readiness for any school generalises far beyond three test files, with no evidence about different CSV formats, class sizes, or data quality."
+      "Three test files cannot establish that the program is bug-free; no test cases, edge cases, or failure modes are described.",
+      "Claiming readiness for any school generalises far beyond three tested files, with no evidence about different CSV formats, class sizes, or data quality."
     ],
     "questions": [
-      "What do the three CSV files contain, and what edge cases did you test?",
-      "What specifically would have to be true before a school other than ours could safely use this?"
+      "What do the three CSV files cover, and what edge cases such as missing or malformed scores were tested?",
+      "What specific evidence supports calling the program bug-free rather than just passing three tests?",
+      "What formats or data would a school need that your tests did not cover?"
     ]
   }
 ]

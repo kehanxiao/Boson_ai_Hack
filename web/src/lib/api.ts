@@ -21,14 +21,19 @@ async function getJson<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+// Built-in sessions, bundled so they still load when the server is down (no slide images then).
+const BUNDLED: Record<string, () => Promise<{ default: unknown }>> = {
+  demo: () => import('../../../demo/session-config.json'),
+  gradebook: () => import('../../../demo/session-config-coding.json'),
+}
+
 export async function fetchSessionConfig(sessionId: string): Promise<SessionConfig> {
   try {
     return await getJson<SessionConfig>(`/api/sessions/${encodeURIComponent(sessionId)}`)
   } catch (err) {
-    if (sessionId !== 'demo') throw err
-    // Server down: the demo session still works from the bundled fixture (no slide images).
-    const fixture = await import('../../../demo/session-config.json')
-    return fixture.default as SessionConfig
+    const bundled = BUNDLED[sessionId]
+    if (!bundled) throw err
+    return (await bundled()).default as SessionConfig
   }
 }
 
