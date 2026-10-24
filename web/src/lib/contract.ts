@@ -26,13 +26,16 @@ export type ExaminerStateName =
 export type ReminderKind = 't_minus_2' | 'time_up'
 export type Role = 'presenter' | 'examiner'
 
+/** Agent-measured metrics (definitions in PLAN.md). The web side may add its own. */
+export type LatencyMetric = 'pause_to_interjection' | 'cancel_to_silence' | 'answer_end_to_reply'
+
 export type UiMsg =
   | { type: 'state'; state: ExaminerStateName }
   | { type: 'caption'; role: Role; text: string; lang?: string; t: number }
   | { type: 'interjection'; slide: number; reason: string; t: number }
   | { type: 'reminder'; kind: ReminderKind; acknowledged: boolean | null }
-  | { type: 'factcheck'; status: 'searching' | 'done'; sources?: string[] }
-  | { type: 'latency'; metric: string; ms: number }
+  | { type: 'factcheck'; status: 'searching' | 'done'; claim?: string; sources?: string[] }
+  | { type: 'latency'; metric: LatencyMetric | (string & {}); ms: number }
   | { type: 'ended'; session_id: string }
 
 // Server API

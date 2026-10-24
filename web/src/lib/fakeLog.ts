@@ -26,6 +26,7 @@ export function logToSteps(lines: LogLine[], sessionId = 'demo'): ReplayStep[] {
   const state = (t: number, s: ExaminerStateName) => steps.push({ t, ui: { type: 'state', state: s } })
   let phase = 'presentation'
   let lastChunkT = 0
+  let lastExaminerT = 0
   let holding = false
 
   for (const e of lines) {
@@ -54,6 +55,11 @@ export function logToSteps(lines: LogLine[], sessionId = 'demo'): ReplayStep[] {
       case 'examiner': {
         const text = String(e.text)
         steps.push({ t, ui: { type: 'caption', role: 'examiner', text, t } })
+        if (phase === 'qa' && lastChunkT > lastExaminerT) {
+          // Approximation: the log has no end-of-speech time, so measure from the chunk's commit.
+          steps.push({ t, ui: { type: 'latency', metric: 'answer_end_to_reply', ms: Math.round((t - lastChunkT) * 1000) } })
+        }
+        lastExaminerT = t
         if (phase === 'presentation') {
           if (!holding) state(t, 'interjecting')
           state(t + speechSeconds(text) + (holding ? HOLD_FLOOR_S : 0), 'listening')
@@ -73,7 +79,15 @@ export function logToSteps(lines: LogLine[], sessionId = 'demo'): ReplayStep[] {
         steps.push({ t, ui: { type: 'reminder', kind: e.for as ReminderKind, acknowledged: true } })
         break
       case 'factcheck':
-        steps.push({ t, ui: { type: 'factcheck', status: e.status as 'searching' | 'done', sources: e.sources as string[] | undefined } })
+        steps.push({
+          t,
+          ui: {
+            type: 'factcheck',
+            status: e.status as 'searching' | 'done',
+            claim: e.claim as string | undefined,
+            sources: e.sources as string[] | undefined,
+          },
+        })
         break
       // 'director' decisions are agent-internal: nothing to show.
     }

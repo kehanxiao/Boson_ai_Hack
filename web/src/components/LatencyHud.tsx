@@ -6,7 +6,13 @@ const median = (xs: number[]) => {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
 }
 
-/** Small corner readout of whatever latency metrics the agent reports (last / median, ms). */
+const LABEL: Record<string, string> = {
+  pause_to_interjection: 'pause → interject',
+  cancel_to_silence: 'cancel → silence',
+  answer_end_to_reply: 'answer → reply',
+}
+
+/** Small corner readout of whatever latency metrics arrive (last / median, ms). Unknown metrics show by name. */
 export function LatencyHud({ latency }: { latency: Record<string, number[]> }) {
   const metrics = Object.entries(latency)
   if (metrics.length === 0) return null
@@ -14,7 +20,7 @@ export function LatencyHud({ latency }: { latency: Record<string, number[]> }) {
     <aside className={styles.hud} aria-label="Latency">
       {metrics.map(([name, values]) => (
         <div key={name} className={styles.row}>
-          <span>{name.replaceAll('_', ' ')}</span>
+          <span>{LABEL[name] ?? name.replaceAll('_', ' ')}</span>
           <span>{values.at(-1)}</span>
           <span className={styles.median}>med {Math.round(median(values))}</span>
         </div>

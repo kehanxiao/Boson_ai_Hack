@@ -13,7 +13,7 @@ export interface SessionView {
   examiner: ExaminerStateName | 'idle'
   captions: Caption[]
   reminder: { kind: ReminderKind; acknowledged: boolean | null; at: number } | null
-  factcheck: { status: 'searching' | 'done'; sources?: string[]; at: number } | null
+  factcheck: { status: 'searching' | 'done'; claim?: string; sources?: string[]; at: number } | null
   latency: Record<string, number[]>
   interjections: { slide: number; reason: string; t: number }[]
   qaStartedAt: number | null
@@ -52,7 +52,11 @@ export function reduceUi(view: SessionView, { msg, at }: { msg: UiMsg; at: numbe
     case 'reminder':
       return { ...view, reminder: { kind: msg.kind, acknowledged: msg.acknowledged, at } }
     case 'factcheck':
-      return { ...view, factcheck: { status: msg.status, sources: msg.sources, at } }
+    {
+      // "done" may omit the claim; keep the one from "searching".
+      const claim = msg.claim ?? (msg.status === 'done' ? view.factcheck?.claim : undefined)
+      return { ...view, factcheck: { status: msg.status, claim, sources: msg.sources, at } }
+    }
     case 'latency': {
       const prev = view.latency[msg.metric] ?? []
       return { ...view, latency: { ...view.latency, [msg.metric]: [...prev, msg.ms].slice(-20) } }

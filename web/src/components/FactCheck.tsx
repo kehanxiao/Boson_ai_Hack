@@ -23,6 +23,7 @@ export function FactCheck({ factcheck, now }: { factcheck: SessionView['factchec
         {searching ? '' : '✓'}
       </span>
       <span>{searching ? 'Checking a claim on the web…' : 'Claim checked'}</span>
+      {factcheck.claim && <q className={styles.claim}>{factcheck.claim}</q>}
       {!searching &&
         factcheck.sources?.map((s) => (
           <a key={s} href={s} target="_blank" rel="noreferrer">

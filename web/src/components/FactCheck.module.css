@@ -34,3 +34,15 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.claim {
+  flex-basis: 100%;
+  order: 1;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--muted);
+}
+
+.searching .claim {
+  color: var(--text);
+}
