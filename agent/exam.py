@@ -86,6 +86,9 @@ ACK_WORDS = re.compile(r"\b(okay|ok|noted|yes|yeah|yep|got it|sure|understood|ri
 ACK_CJK = ("好的", "明白", "知道")
 URL = re.compile(r"https?://[^\s)\]>\"']+")
 INDONESIAN = re.compile(r"\b(saya|kami|kita|tidak|belum|sudah|bisa|itu|ini|yang|dengan|untuk|karena|tapi|jujur|apakah|waktu)\b", re.I)
+# An untagged line that describes the exam instead of speaking in it: 'The examiner says, "Good afternoon..."' was
+# spoken aloud (live run, Sat 08:12). Her real lines address the presenter as "you".
+NARRATION = re.compile(r"(the examiner|the presenter|she (says|said|asks|replies|responds))", re.I)
 PREAMBLES = ("Hm, let me check that.", "Hang on, let me look that up.", "Wait, is that right? Let me check.")
 
 
@@ -586,6 +589,10 @@ class ExamController:
             # Seen in sims: the brain's response failed upstream (no text). Ask once more.
             await self._ask_brain({**d.ctx, "retry": True}, *(reask[1:] if reask else ()))
             return
+        if d.action == "INVALID" and NARRATION.search(d.text):
+            log.info("brain: untagged narration dropped")
+            await self.brain.forget(d)  # never said
+            d = Decision("INVALID", "", d.ms, d.ctx, d.raw)
         if d.action == "INVALID" and len(d.text.split()) >= 2 and not d.text.startswith("["):
             # A spoken line without its tag: seen as "Let me finish, please. You haven't answered..." after a
             # talk-over note (sims, Sat 04:55). parse() stays strict so the probes still count format slips.
