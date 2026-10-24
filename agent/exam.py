@@ -593,13 +593,16 @@ class ExamController:
                 await self._fallback_question(first=True)  # question time must start with a question
             return
         if self.engaged:
-            await self.note("[She did not get to say that: something else took the floor, so it was not heard.]")
+            await self.brain.forget(d)  # never heard: not part of what she said
+            return
+        if d.action in ("SAY", "END") and self._repeats(d.text):
+            await self._blocked_repeat(d)
             return
         if self.phase == "presentation":
             if d.action == "CHECK":
-                await self.check(d.text, d.ctx)
+                await self.check(d.text, d.ctx, d)
             else:
-                await self.interject(d.text, d.ctx)
+                await self.interject(d.text, d.ctx, d)
         elif self.phase == "qa":
             if d.action == "END" and self.qa_asked < MIN_QA_QUESTIONS and not self.qa_over:
                 if d.ctx.get("forced"):
@@ -609,12 +612,6 @@ class ExamController:
                                           + "\n\nDon't end yet: ask your next question now. Answer SAY.")
             elif d.action == "END":
                 await self.enter_debrief(react=d.text)
-            elif d.action == "SAY" and self._repeats(d.text):
-                if d.ctx.get("forced"):
-                    await self._fallback_question()
-                else:
-                    await self._ask_brain({**d.ctx, "forced": True}, self._qa_prompt()
-                                          + "\n\nYou have already asked that twice. Ask a different question now. Answer SAY or END.")
             elif d.action == "SAY":
                 self.said.append(content_set(d.text))
                 self.qa_asked += 1
@@ -622,12 +619,25 @@ class ExamController:
                 await self.say("qa", prompts.say_exactly(d.text), max_tokens=100, metric="answer_end_to_reply",
                                ref=d.ctx.get("pause_at"), line=d.text)
 
-    async def interject(self, line: str, ctx: dict) -> None:
-        if self._repeats(line):
-            # Once more is fine (they asked her to repeat, live run Sat 03:44); a third time is nagging (the same
-            # line four times while the presenter kept talking over her, Sat 03:07).
-            await self.note("[She has already made that point twice. Let it go for now, or say something new.]")
-            return
+    async def _blocked_repeat(self, d: Decision) -> None:
+        """She has made this point twice. Once more is fine (they asked her to repeat, live run Sat 03:44); a third
+        time is nagging. The line is forgotten, as never said, and the brain is asked once more for something else:
+        blocked lines left in place made it propose the same line ~15 times while the presenter's "which slide?"
+        went unanswered (live run, Sat 06:17)."""
+        await self.brain.forget(d)
+        if d.ctx.get("forced"):
+            if self.phase == "qa":
+                await self._fallback_question()
+            return  # asked again already: stay silent
+        log.info("brain: blocked repeat, asking again")
+        task = ("You have already made that point twice, so it was not said. If the presenter asked you something, "
+                "answer it now. Otherwise say something new, or SILENT.") if self.phase == "presentation" else \
+            "You have already asked that twice, so it was not said. Ask a different question now. Answer SAY or END."
+        base = self._qa_prompt() if self.phase == "qa" else prompts.brain(self.config, "presentation")
+        if self.brain_ok and not self.brain.thinking:
+            await self.brain.ask({**d.ctx, "forced": True}, base + "\n\n" + task)
+
+    async def interject(self, line: str, ctx: dict, decision: Decision | None = None) -> None:
         self.said.append(content_set(line))
         self.raised.append(line)
         slide = ctx.get("slide", self.slide)
@@ -635,12 +645,14 @@ class ExamController:
         await self.ui.publish({"type": "interjection", "slide": slide, "reason": line, "t": entry["t"]})
         if not await self.say("interjection", prompts.say_exactly(line), hold=True, max_tokens=100,
                               metric="pause_to_interjection", ref=ctx.get("pause_at"), line=line, reply=ctx.get("reply")):
-            await self.note("[She did not get to say that, so it was not heard.]")
+            if decision:
+                await self.brain.forget(decision)  # never heard
 
-    async def check(self, claim: str, ctx: dict) -> None:
+    async def check(self, claim: str, ctx: dict, decision: Decision | None = None) -> None:
         now = time.monotonic()
         if not self.factcheck_enabled or now - self.last_factcheck < FACTCHECK_SPACING_S:
-            await self.note("[She could not look that up right now; nothing was said.]")
+            if decision:
+                await self.brain.forget(decision)  # nothing was said
             return
         self.last_factcheck = now
         self.factcheck = {"claim": claim, "sources": []}

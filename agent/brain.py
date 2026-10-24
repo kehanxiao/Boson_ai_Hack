@@ -38,6 +38,7 @@ class Decision:
     ms: int
     ctx: dict = field(default_factory=dict)
     raw: str = ""
+    item_ids: list[str] = field(default_factory=list)  # its answer in the brain's conversation (to forget it)
 
 
 def parse(text: str) -> tuple[str, str]:
@@ -114,12 +115,20 @@ class Brain:
         """Ask for one decision about everything heard so far. False if it is still deciding (or offline)."""
         if not self.connected or self._asked or self.rt.busy:
             return False
-        self._asked = {"ctx": ctx, "at": time.monotonic()}
+        self._asked = {"ctx": ctx, "at": time.monotonic(), "items": []}
         self._text = ""
         if not await self.rt.create_response(instructions, max_tokens):
             self._asked = None
             return False
         return True
+
+    async def forget(self, decision: Decision) -> None:
+        """Remove a decision that was never spoken from the brain's conversation. Left in, each blocked repeat
+        read as "she said it again", and it kept proposing the same line instead of answering the presenter's
+        question (live run, Sat 06:17: the same line ~15 times, "which slide?" six times unanswered)."""
+        for item_id in decision.item_ids:
+            await self.rt.send({"type": "conversation.item.delete", "item_id": item_id})
+        log.info("brain: forgot %d item(s) of an unspoken %s", len(decision.item_ids), decision.action)
 
     def check_stuck(self) -> None:
         if self._asked and time.monotonic() - self._asked["at"] > STUCK_S:
@@ -130,6 +139,10 @@ class Brain:
     async def _on_event(self, kind: str, event: dict) -> None:
         if kind == "response.output_text.done":
             self._text = event.get("text", "")
+        elif kind == "conversation.item.added" and self._asked:
+            item = event.get("item", {})
+            if item.get("role") == "assistant" and item.get("id"):
+                self._asked["items"].append(item["id"])
         elif kind == "response.done":
             self.last_done = time.monotonic()
             asked, self._asked = self._asked, None
@@ -140,7 +153,9 @@ class Brain:
             if asked:
                 action, text = parse(self._text)
                 ms = int((time.monotonic() - asked["at"]) * 1000)
-                await self.on_decision(Decision(action, text, ms, asked["ctx"], self._text.strip()))
+                ids = [o["id"] for o in event.get("response", {}).get("output", []) if o.get("id")]
+                ids = list(dict.fromkeys(ids + asked["items"]))
+                await self.on_decision(Decision(action, text, ms, asked["ctx"], self._text.strip(), ids))
         elif kind == "error" and self._asked and not self.rt.response_active:
             self._asked = None  # the request was refused before it started
         elif kind == "connection.closed":
