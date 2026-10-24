@@ -28,6 +28,7 @@ A hand-built worker: joins the LiveKit room, starts a Higgs Avatar session, and 
     - **The brain's order:** `brain.mark()` commits the audio so far, then adds "[She starts speaking now.]" or "[She has finished speaking.]". When a decision is being written, the note waits behind the queued commit.
     - **Overlap:** while she is heard, presenter audio is held back from the brain. If they stopped before she finished (trailing off, "yeah"), it is dropped. If they were still talking as she finished, or talked over her (barge-in), it is passed on. Live run (Sat 04:30): the brain took overlap as their answer and her line as earlier than it was heard.
     - A talk-over → she stops, and the brain decides between "Let me finish, please." and answering what they said.
+  - **Silence in the presentation:** after `TALK_SILENCE_S` (8 s) with nobody speaking, and no search or decision under way, she urges them on ("Please continue."). This happens at most twice per silence; before they have said anything, the line is "Please begin when you're ready."
   - **Holding the floor:** 1.5 s. Reminder → acknowledgement (phrase / silence / jump to the last slide) → one escalation.
   - **Talked over:** her brain lines and Q&A questions stop when the presenter keeps talking past the hold window (cancel + clear + truncate). The brain is told what the presenter heard. Reminders, fact-checks and the verdict hold the floor.
     - Q&A: 0.8 s past the hold.

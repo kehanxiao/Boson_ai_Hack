@@ -61,6 +61,9 @@ QA_PATIENCE_S = {"high": 1.6, "medium": 2.0, "low": 2.5}  # silence before a Q&A
 QA_SILENCE_S = 8  # nothing said this long in Q&A: the brain decides (rephrase, move on)
 QA_NUDGES = 3  # at most this many silence prompts per question
 QA_GRACE_S = 25  # past the Q&A time, the exchange under way may finish within this
+TALK_SILENCE_S = 8  # presentation: nobody has spoken this long, so she urges the presenter on
+TALK_NUDGES = 2  # at most this many in one silence
+NUDGES = ("Please continue.", "Go on, please.", "Carry on, please.")
 MIN_QA_QUESTIONS = 2  # live run (Sat 03:08): the brain ENDed question time before asking anything
 ACK_SILENCE_S = 1.0  # going quiet this long after a reminder counts as acknowledging it
 IGNORE_AFTER_S = 3.5  # still talking this long after a reminder means it was ignored
@@ -194,6 +197,7 @@ class ExamController:
         self.qa_over = False
         self.qa_asked = 0  # questions she has asked in Q&A
         self.qa_turn: asyncio.Task | None = None
+        self.talk_nudges = 0  # presentation: silence nudges since the presenter last spoke
         self.fallback_questions = prompts.qa_questions(config)  # only if the brain is unavailable
         self._tasks: list[asyncio.Task] = []
 
@@ -329,6 +333,7 @@ class ExamController:
     async def on_speech_start(self) -> None:
         self.presenter_speaking = True
         self.silent_since = None
+        self.talk_nudges = 0
         self.last_speech_start = time.monotonic()
         if time.monotonic() - self.last_commit > 0.3:
             self.chunk_slide = self.slide
@@ -857,6 +862,8 @@ class ExamController:
             if self._gap_pending and not self.presenter_speaking and self._may_cut_in():
                 ctx, self._gap_pending = self._gap_pending, None
                 await self._ask_brain({**ctx, "pause_at": now})
+            if self.phase == "presentation":
+                await self._maybe_nudge(now)
             if (self.phase == "qa" and self.answer_since is not None and not self.presenter_speaking
                     and not self.engaged and now - self.qa_quiet_since >= QA_SILENCE_S and self.qa_nudges < QA_NUDGES):
                 # Nothing more said: the brain decides whether to wait, rephrase or move on.
@@ -864,6 +871,18 @@ class ExamController:
                 self.qa_quiet_since = now
                 await self.note(f"[{QA_SILENCE_S * self.qa_nudges} seconds without an answer from the presenter.]")
                 await self._qa_ask(now)
+
+    async def _maybe_nudge(self, now: float) -> None:
+        """TALK_SILENCE_S with nobody speaking: she urges the presenter on. Not while she speaks, searches or
+        decides. A presenter waiting for a reaction that never came sat in 15 s of dead air (live run, Sat 07:57)."""
+        quiet_since = max(self.silent_since or self.started, self.last_spoke_end)
+        if (self.presenter_speaking or self.engaged or self.factcheck is not None or self.talk_nudges >= TALK_NUDGES
+                or (self.brain_ok and self.brain.thinking) or now - quiet_since < TALK_SILENCE_S):
+            return
+        words = random.choice(NUDGES) if self.last_speech_start >= self.started else "Please begin when you're ready."
+        if await self.say("nudge", prompts.say_exactly(words), max_tokens=30):
+            self.talk_nudges += 1
+            self.slog.write("director", action="nudge", cue=words, ms=0, reason=f"{TALK_SILENCE_S} s of silence")
 
     async def _timer(self) -> None:
         limit = self.config.get("time_limit_s", 300)
