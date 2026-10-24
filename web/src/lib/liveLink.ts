@@ -14,6 +14,9 @@ export async function connectLive(sessionId: string): Promise<VivaLink> {
 
   room.registerTextStreamHandler(TOPIC.ui, async (reader) => {
     try {
+      // The clock starts when the agent answers Start (its first viva.ui), as the agent's own clock does.
+      // Counting from the first Start sent, the timer ran ahead while the agent was still joining.
+      if (startedAt === null) startedAt = performance.now()
       ui.emit(JSON.parse(await reader.readAll()) as UiMsg)
     } catch (err) {
       console.warn('[viva.ui] bad message', err)
@@ -43,7 +46,6 @@ export async function connectLive(sessionId: string): Promise<VivaLink> {
   return {
     kind: 'live',
     send(msg) {
-      if (msg.type === 'start' && startedAt === null) startedAt = performance.now() // retries keep the clock
       room.localParticipant
         .sendText(JSON.stringify(msg), { topic: TOPIC.ctl })
         .catch((err) => console.warn('[viva.ctl] send failed', err))
