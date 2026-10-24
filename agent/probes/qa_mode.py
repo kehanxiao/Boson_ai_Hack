@@ -128,7 +128,7 @@ async def part2(results: dict) -> None:
 
 async def run_auto_checks(probe, mode, turn_detection, part_1, part_2, indonesian, barge, results) -> None:
     if turn_detection is not None:  # fresh fallback session
-        receiver = asyncio.create_task(probe.receive())
+        _receiver = asyncio.create_task(probe.receive())  # referenced so it isn't collected; ends with the connection
         await probe.send(session_update(QA_INSTRUCTIONS, turn_detection))
         await asyncio.sleep(2)
         results["K5b automatic turns accepted at start"] = f"PASS ({mode})" if not probe.seen("error", 0) else f"FAIL ({mode})"

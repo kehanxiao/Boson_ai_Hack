@@ -107,6 +107,14 @@ def content_set(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z']+", text.lower()) if w not in STOP_WORDS}
 
 
+def time_left(seconds: float) -> str:
+    """The reminder's words: "2 minutes", "1 minute", "45 seconds"."""
+    if seconds >= 60 and seconds % 60 == 0:
+        minutes = int(seconds // 60)
+        return f"{minutes} minute{'s' if minutes > 1 else ''}"
+    return f"{int(seconds)} seconds"
+
+
 def similar(a: set[str], b: set[str]) -> bool:
     """The same point reworded: "Your code unpacks each row as exactly two fields..." and "You unpack each CSV
     row as exactly two fields..." (live run, Sat 03:44) share most of their content words."""
@@ -136,8 +144,11 @@ class ExamController:
         self.ui = ui
         self.slog = slog
         self.factcheck_enabled = factcheck
-        # T-2 for a long talk; for a short one a third of it (3-minute demo: "1 minute left" at 2:00).
-        self.reminder_before_s = min(reminder_before_s, max(30, config.get("time_limit_s", 300) // 3))
+        # Whole minutes, so her words are true when she says them: T-2 for a talk of 5 minutes or more, T-1 for a
+        # shorter one (3-minute demo: "1 minute left" at 2:00), 30 s under 2 minutes. A third of the talk made a
+        # 5-minute talk hear "2 minutes left" with 1:40 to go.
+        limit = config.get("time_limit_s", 300)
+        self.reminder_before_s = min(reminder_before_s, 120 if limit >= 300 else 60 if limit >= 120 else 30)
         self.qa_enabled = prompts.has_qa(config)  # qa_s 0: no question time and no verdict
 
         # The character drives interruption behaviour (PLAN.md "Character drives the examiner's behaviour").
@@ -896,8 +907,7 @@ class ExamController:
         if limit - self.reminder_before_s > 20:
             await asyncio.sleep(max(0.0, limit - self.reminder_before_s - self.elapsed()))
             if self.phase == "presentation":
-                minutes = max(1, round(self.reminder_before_s / 60))
-                await self.remind("t_minus_2", f"{minutes} minute{'s' if minutes > 1 else ''} left.")
+                await self.remind("t_minus_2", f"{time_left(self.reminder_before_s)} left.")
         await asyncio.sleep(max(0.0, limit - self.elapsed()))
         if self.phase == "presentation":
             await self.remind("time_up", "Time is up. Stop there, please; we move to questions." if self.qa_enabled
@@ -945,11 +955,10 @@ class ExamController:
         r["escalated"], r["played_at"] = True, None
         self.slog.write("escalation", **{"for": r["kind"]})
         await self.ui.publish({"type": "reminder", "kind": r["kind"], "acknowledged": False})
-        minutes = max(1, round(self.reminder_before_s / 60))
         for _ in range(10):
             if self.phase != "presentation" or await self.say(
                     "escalation", "The presenter ignored your time reminder and kept talking. Cut in firmly and hold "
-                    f"the floor. Say: \"Let me stop you there. You have under {minutes} minute{'s' if minutes > 1 else ''}. "
+                    f"the floor. Say: \"Let me stop you there. You have under {time_left(self.reminder_before_s)}. "
                     "Move to your conclusion.\"", hold=True, max_tokens=60):
                 return
             await self.wait_idle(timeout=1)
